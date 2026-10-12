@@ -24,7 +24,7 @@ export function nextChildId(goalsDir, parent) {
   return `${prefix}${numbers.length ? Math.max(...numbers) + 1 : 1}`;
 }
 
-function template({ id, parent, title, summary, date }) {
+export function goalTemplate({ id, parent, title, summary, date }) {
   return `---
 id: ${id}
 parent: ${parent}
@@ -108,11 +108,11 @@ export function createGoal({ goalsDir = GOALS_DIR, id, parent, slug, title, summ
   if (ids.includes(id)) throw new Error(`${id} はすでにあります`);
   if (!ids.includes(parent)) throw new Error(`親のゴール ${parent} が見つかりません`);
   const path = join(goalsDir, `${id}-${slug}.md`);
-  writeFileSync(path, template({ id, parent, title, summary, date }), { flag: 'wx' });
+  writeFileSync(path, goalTemplate({ id, parent, title, summary, date }), { flag: 'wx' });
   return path;
 }
 
-const USAGE = '使い方：npm run goal:new -- --parent G0 --slug observation --title "現実からの観測" --summary "一文の要約" [--id G7]';
+const USAGE = '使い方：saihai new --parent G0 --slug observation --title "現実からの観測" --summary "一文の要約" [--id G7]';
 
 export function run({ argv = [], goalsDir = GOALS_DIR } = {}) {
   try {

@@ -7,14 +7,13 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { checkRepo, isNoHypothesis, loadGoals, parseExpressions, section } from './check-goals.mjs';
+import { checkRepo, isAdoptedJudgment as isAdopted, isNoHypothesis, loadGoals, parseExpressions, section } from './check-goals.mjs';
 import { checkDecisions, loadDecisions } from './decision-log.mjs';
 import { TARGETS } from './eval-goals.mjs';
 import { runHidden } from './eval-hidden.mjs';
+import { readConfig, transcriptsDirOf } from './root.mjs';
 
 const REPO_DIR = fileURLToPath(new URL('..', import.meta.url));
-const TRANSCRIPTS_DIR = join(homedir(), '.claude', 'projects', REPO_DIR.replace(/\/$/, '').replace(/[^a-zA-Z0-9]/g, '-'));
-const ADOPTED = '推奨を採用（J37）';
 const TOO_FEW = 5; // これ未満の件数の指標は判定に使わない（J51）
 const DEVIATIONS = ['逸脱', '仮置きの変更', '指摘'];
 
@@ -46,7 +45,6 @@ export function collectGoalMetrics(goals) {
     .map((s) => [s, goals.filter((g) => g.frontmatter?.status === s).length])
     .filter(([, n]) => n > 0);
   const judgments = goals.flatMap((g) => g.judgments);
-  const isAdopted = (j) => (j.cells[2] ?? '').includes(ADOPTED);
   const adopted = judgments.filter(isAdopted).length;
   const asked = judgments.filter((j) => !isAdopted(j) && j.from.length > 0).length;
   const conversation = judgments.length - adopted - asked;
@@ -133,8 +131,9 @@ export function collectTranscriptMetrics(transcriptsDir) {
   ];
 }
 
-function collectHiddenMetrics(hidden) {
-  return Object.keys(TARGETS).map((target) => {
+// 隠しシナリオは、設定の hidden に挙げた評価対象だけ（今は saihai 自身の check-goals だけ）
+function collectHiddenMetrics(hidden, targets) {
+  return targets.filter((t) => TARGETS[t]).map((target) => {
     let r;
     try {
       r = hidden(target);
@@ -149,15 +148,19 @@ function collectHiddenMetrics(hidden) {
 // 合否のような1回の値は、履歴に残した回数を件数にする（G7.1 の仮置き）
 const historyCount = (history, name) => history.filter((h) => h.kind === '観測' && h.metrics?.some((m) => m.name === name)).length + 1;
 
-// main のゴール文書・判断ログ・検査ツールを一時フォルダに取り出す。git や main がなければ null
+// main のゴール文書と判断ログを一時フォルダに取り出す。saihai 自身なら検査ツール（tools）も取り出す。git や main がなければ null
+const INSTALLED_CHECKER = fileURLToPath(new URL('./check-goals.mjs', import.meta.url));
 function extractMain(repoDir) {
-  const ls = spawnSync('git', ['ls-tree', '--name-only', 'main'], { cwd: repoDir, encoding: 'utf8' });
+  const ls = spawnSync('git', ['ls-tree', '-r', '--name-only', 'main'], { cwd: repoDir, encoding: 'utf8' });
   if (ls.status !== 0) return null;
-  const paths = ls.stdout.split('\n').filter((n) => ['goals', 'decisions', 'tools'].includes(n));
-  if (!paths.includes('goals') || !paths.includes('tools')) return null;
+  const files = ls.stdout.split('\n');
+  if (!files.some((f) => f.startsWith('goals/'))) return null;
+  // saihai 自身（bin/saihai.mjs と tools/check-goals.mjs がある）だけ、main の検査ツールを使う。導入先の tools/ は実行しない
+  const self = files.includes('bin/saihai.mjs') && files.includes('tools/check-goals.mjs');
+  const paths = ['goals', ...(files.some((f) => f.startsWith('decisions/')) ? ['decisions'] : []), ...(self ? ['tools'] : [])];
   const dir = mkdtempSync(join(realpathSync(tmpdir()), 'saihai-main-'));
   const r = spawnSync('sh', ['-c', 'git archive main "$@" | tar -x -C "$0"', dir, ...paths], { cwd: repoDir });
-  if (r.status === 0) return dir;
+  if (r.status === 0) return { dir, checker: self ? join(dir, 'tools', 'check-goals.mjs') : INSTALLED_CHECKER };
   rmSync(dir, { recursive: true, force: true });
   return null;
 }
@@ -165,10 +168,11 @@ function extractMain(repoDir) {
 // G5 の仮説の観測。作業ツリーではなく、main の検査ツールで main を検査する（G7.1 の D6 の指摘）。
 // 作業ツリーの検査ツールで検査すると、書式を変えたときに main が壊れたように見える。main がなければ作業ツリーで代える
 export function collectCheckMetric(repoDir, goals, history) {
-  const mainDir = extractMain(repoDir);
+  const main = extractMain(repoDir);
+  const mainDir = main?.dir;
   try {
-    const failed = mainDir
-      ? spawnSync(process.execPath, [join(mainDir, 'tools', 'check-goals.mjs'), '--goals-dir', join(mainDir, 'goals')], { stdio: 'ignore' }).status === 0 ? 0 : 1
+    const failed = main
+      ? spawnSync(process.execPath, [main.checker, '--goals-dir', join(mainDir, 'goals')], { stdio: 'ignore' }).status === 0 ? 0 : 1
       : checkRepo(goals).length + checkDecisions(loadDecisions(join(repoDir, 'goals')), goals.map((g) => g.frontmatter?.id).filter(Boolean)).length > 0 ? 1 : 0;
     const source = mainDir ? 'ゴール文書の検査（main）' : 'ゴール文書の検査（いまの作業ツリー。main が見つからない）';
     return metric('mainの検査の失敗', failed ? '1（違反あり）' : '0（違反なし）', historyCount(history, 'mainの検査の失敗'), source, ['G5.E2'], failed);
@@ -281,19 +285,25 @@ export function derivedMetrics(metrics, verdicts) {
 // --- まとめ ---
 
 export function observeAll({
-  goals = loadGoals(join(REPO_DIR, 'goals')),
   repoDir = REPO_DIR,
-  transcriptsDir = TRANSCRIPTS_DIR,
+  goals = loadGoals(join(repoDir, 'goals')),
+  transcriptsDir = transcriptsDirOf(repoDir),
   hidden = (targetName) => runHidden({ targetName }),
+  hiddenTargets = readConfig(repoDir).hidden ?? [],
+  // 組み込みの指標に付ける具体例の ID は saihai 自身のもの。導入先では付けず、仮説から引いたものだけにする（G9）
+  ownExamples = realPath(repoDir) === realPath(REPO_DIR),
 } = {}) {
   const history = readJsonl(observationsPathOf(repoDir));
+  const own = (m) => (ownExamples ? m : { ...m, examples: [] });
   const builtin = [
-    ...collectGoalMetrics(goals),
-    ...collectDecisionMetrics(repoDir),
-    ...collectGitMetrics(repoDir, goals),
-    ...collectHiddenMetrics(hidden),
-    ...collectTranscriptMetrics(transcriptsDir),
-    collectCheckMetric(repoDir, goals, history),
+    ...[
+      ...collectGoalMetrics(goals),
+      ...collectDecisionMetrics(repoDir),
+      ...collectGitMetrics(repoDir, goals),
+      ...collectHiddenMetrics(hidden, hiddenTargets),
+      ...collectTranscriptMetrics(transcriptsDir),
+      collectCheckMetric(repoDir, goals, history),
+    ].map(own),
     ...collectProbeMetrics(repoDir, history),
   ];
   const derivedNames = ['判断に使える指標の割合', '判定できた仮説の割合'];
@@ -306,9 +316,9 @@ export function observeAll({
   const base = [...collected, ...unobserved];
   // 判定できた仮説の割合は、仮説の判定そのものから出すので、2回に分けて判定する。
   // 1回目にも「判断に使える指標の割合」は入れる（G7 の判定を数え漏らさないため）
-  const usable = derivedMetrics(base, []).find((m) => m.name === '判断に使える指標の割合');
+  const usable = own(derivedMetrics(base, []).find((m) => m.name === '判断に使える指標の割合'));
   const firstVerdicts = judgeHypotheses(goals, [...base, usable]);
-  const metrics = [...base, ...derivedMetrics(base, firstVerdicts)].map((m) => {
+  const metrics = [...base, ...derivedMetrics(base, firstVerdicts).map(own)].map((m) => {
     const linked = linkedHypotheses(goals, m.name).filter((x) => !m.examples.includes(x));
     return { ...m, examples: [...m.examples, ...linked] };
   });
@@ -332,7 +342,7 @@ export function renderReport(metrics, verdicts = [], previous = new Map(), now =
     '|---|---|---|---|---|---|---|',
     ...metrics.map((m) => {
       const before = previous.has(m.name) ? fmt(previous.get(m.name)) : '―';
-      return `| ${cell(m.name)} | ${cell(m.value)} | ${before} | ${m.count} | ${cell(m.source)} | ${cell(m.examples.join('・'))} | ${m.count >= TOO_FEW ? '使える' : 'まだ判断できない'} |`;
+      return `| ${cell(m.name)} | ${cell(m.value)} | ${before} | ${m.count} | ${cell(m.source)} | ${cell(m.examples.join('・') || '―')} | ${m.count >= TOO_FEW ? '使える' : 'まだ判断できない'} |`;
     }),
     '',
     `件数が${TOO_FEW}件未満の指標は「まだ判断できない」とし、仮説の判定にも解釈（G6）の候補にも使わない（J51）。`,
@@ -349,25 +359,33 @@ function realPath(path) {
 }
 
 // npm run observe [-- --save] [-- --record 指標=値 --n 件数 --note メモ --by 人|AI]
-if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+export function run({ argv = [], root = REPO_DIR } = {}) {
   try {
     const { values } = parseArgs({
-      args: process.argv.slice(2),
+      args: argv,
       options: { save: { type: 'boolean' }, record: { type: 'string' }, n: { type: 'string' }, note: { type: 'string' }, by: { type: 'string' } },
     });
+    const out = [];
     if (values.record) {
       const [name, value] = values.record.split('=');
-      const entry = recordObservation({ name: name?.trim(), num: Number(value), count: values.n ? Number(values.n) : 1, note: values.note ?? '', by: values.by ?? 'AI' });
-      process.stdout.write(`観測を記録しました：${entry.name} = ${entry.num}（${entry.count}件、${entry.by} の記録）\n\n`);
+      const entry = recordObservation({ repoDir: root, name: name?.trim(), num: Number(value), count: values.n ? Number(values.n) : 1, note: values.note ?? '', by: values.by ?? 'AI' });
+      out.push(`観測を記録しました：${entry.name} = ${entry.num}（${entry.count}件、${entry.by} の記録）\n\n`);
     }
-    const { metrics, verdicts, previous } = observeAll();
-    process.stdout.write(renderReport(metrics, verdicts, previous));
+    const { metrics, verdicts, previous } = observeAll({ repoDir: root });
+    out.push(renderReport(metrics, verdicts, previous));
     if (values.save) {
-      saveSnapshot(REPO_DIR, metrics);
-      process.stdout.write('観測を履歴（observations/log.jsonl）に残しました。\n');
+      saveSnapshot(root, metrics);
+      out.push('観測を履歴（observations/log.jsonl）に残しました。\n');
     }
+    return { code: 0, out: out.join(''), err: '' };
   } catch (error) {
-    process.stderr.write(`観測できませんでした：${error.message}\n`);
-    process.exitCode = 1;
+    return { code: 1, out: '', err: `観測できませんでした：${error.message}\n` };
   }
+}
+
+if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { code, out, err } = run({ argv: process.argv.slice(2) });
+  process.stdout.write(out);
+  process.stderr.write(err);
+  process.exitCode = code;
 }

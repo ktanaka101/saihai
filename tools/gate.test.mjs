@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGate } from './gate.mjs';
+import { checksFor, gateChecks, runGate } from './gate.mjs';
 
 // テストの一時リポジトリでは、利用者の git フックを動かさない
 const HOOKLESS = ['-c', 'core.hooksPath=/dev/null'];
@@ -115,4 +115,42 @@ test('push に失敗したら、そのことを報告する（main は手元で�
   assert.equal(r.code, 1);
   assert.match(r.summary, /push に失敗/);
   assert.equal(git(repo, 'show', 'main:feature.txt'), 'feature');
+});
+
+test('push しない設定なら、手元の main だけを更新して通過とする（リモートのないプロジェクト向け。G9.E4）', () => {
+  const { repo, git } = setupRepo({ withRemote: false });
+  const r = runGate({ repoDir: repo, checks: [pass], gitConfig: HOOKLESS, push: false });
+  assert.equal(r.code, 0, r.summary);
+  assert.match(r.summary, /push はしていません/);
+  assert.equal(git(repo, 'show', 'main:feature.txt'), 'feature');
+});
+
+test('checksFor: 既定はゴール文書の検査だけ。設定の検査を後ろに足し、goalCheck: false なら既定を外す（G9.E4）', () => {
+  const bin = '/opt/saihai/bin/saihai.mjs';
+  assert.deepEqual(checksFor({}, bin).map((c) => c.name), ['ゴール文書の検査']);
+  assert.deepEqual(checksFor({}, bin)[0].cmd.slice(1), [bin, 'check', '--root', '.']);
+  const extra = { name: 'テスト', cmd: ['npm', 'test'] };
+  assert.deepEqual(checksFor({ gate: { checks: [extra] } }, bin).map((c) => c.name), ['ゴール文書の検査', 'テスト']);
+  assert.deepEqual(checksFor({ gate: { goalCheck: false, checks: [extra] } }, bin), [extra]);
+});
+
+test('gateChecks: 設定は main のものを基にし、候補のブランチは検査を足せても外せない（レビューの指摘）', () => {
+  const bin = '/opt/saihai/bin/saihai.mjs';
+  const x = { name: 'テスト', cmd: ['npm', 'test'] };
+  const y = { name: '型', cmd: ['tsc'] };
+  assert.deepEqual(gateChecks({ main: {}, branch: { gate: { goalCheck: false, checks: [x] } } }, bin).map((c) => c.name), ['ゴール文書の検査', 'テスト']);
+  assert.deepEqual(gateChecks({ main: { gate: { goalCheck: false, checks: [x] } }, branch: { gate: { checks: [x, y] } } }, bin), [x, y]);
+});
+
+test('検査の子プロセスには SAIHAI_ROOT を渡さない（マージした結果ではない場所を検査しないように）', () => {
+  const { repo } = setupRepo();
+  const saved = process.env.SAIHAI_ROOT;
+  process.env.SAIHAI_ROOT = '/somewhere/else';
+  try {
+    const r = gate(repo, [{ name: 'SAIHAI_ROOT がない', cmd: [process.execPath, '-e', 'process.exit(process.env.SAIHAI_ROOT ? 1 : 0)'] }]);
+    assert.equal(r.code, 0, r.summary);
+  } finally {
+    if (saved === undefined) delete process.env.SAIHAI_ROOT;
+    else process.env.SAIHAI_ROOT = saved;
+  }
 });

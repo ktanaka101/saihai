@@ -97,7 +97,7 @@ export function appendDecision({ goalsDir = join(REPO_DIR, 'goals'), decisionsPa
 }
 
 const USAGE = [
-  '使い方：npm run log -- --goal <ID> --kind 判断 --decision "何を決めたか" --related "G7.1.E2,J47" --reason "なぜ"',
+  '使い方：saihai log --goal <ID> --kind 判断 --decision "何を決めたか" --related "G7.1.E2,J47" --reason "なぜ"',
   '        --rejected "退けた案と理由" --relation 従った|逸脱|仮置きの変更|指摘|該当なし --reversibility 容易|困難 --impact "データ形式,利用者の体験"',
   '        （バックブリーフ・報告は --goal --kind --decision [--reason]、確認は --goal --kind 確認 --targets "D3,D4"）',
 ].join('\n');

@@ -17,7 +17,9 @@ const JUDGMENT_COLUMNS = 6; // ID・日付・判断・強さ・上申・置き�
 const JUDGMENT_FROM = /^(―|Q\d+(\s*、\s*Q\d+)*)$/;
 const STRENGTHS = ['不変条件', '推奨', '仮置き']; // 制約と判例の強さ（G1.2・J58）
 const INTENT_LABELS = ['目的', '理由', '望ましい最終状態'];
-const ADOPTED = '推奨を採用（J37）'; // 熟考していない判断。不変条件にはできない
+// 包括的な指示（saihai では J37、導入先では別の番号）に基づいて推奨を採用しただけの判断。熟考していないので不変条件にはできない
+const ADOPTED = /推奨を採用（J\d+）/;
+export const isAdoptedJudgment = (j) => ADOPTED.test(j.cells?.[2] ?? '');
 const EXPRESSION = /^\s*(\S+)\s*(>=|<=|==|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/; // 観測の式：指標 演算子 数値
 const ID_REFERENCE = /G\d+(\.\d+)*(\.E\d+)?|J\d+|Q\d+|D\d+/;
 const FILE_NAME = /^(G\d+(?:\.\d+)*)-[a-z0-9-]+\.md$/;
@@ -241,7 +243,7 @@ function strengthViolations(goal) {
     .filter((j) => j.cells.length === JUDGMENT_COLUMNS)
     .flatMap((j) => {
       if (!STRENGTHS.includes(j.strength)) return [`判例 ${j.id} の強さ「${j.strength}」は ${STRENGTHS.join('・')} のどれかにしてください`];
-      if (j.strength === '不変条件' && j.cells[2].includes(ADOPTED)) return [`判例 ${j.id} は推奨を採用しただけ（J37）なので、不変条件にはできません`];
+      if (j.strength === '不変条件' && isAdoptedJudgment(j)) return [`判例 ${j.id} は推奨を採用しただけ（包括的な指示）なので、不変条件にはできません`];
       return [];
     });
 }

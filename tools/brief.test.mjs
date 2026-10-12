@@ -118,9 +118,11 @@ test('祖先のゴールの不変条件・推奨・報告条件と、強さが�
 
 test('進め方に、バックブリーフ・判断ログ・逸脱の報告・黙って従わないことの依頼が入る（G8.E2）', () => {
   const brief = buildBrief(goals, 'G9');
-  for (const text of ['バックブリーフ', 'npm run log', '逸脱', '指摘', '止まって', 'npm run gate']) {
+  for (const text of ['バックブリーフ', 'saihai log --goal G9', '逸脱', '指摘', '止まって', 'saihai gate']) {
     assert.ok(brief.includes(text), text);
   }
+  // 呼び方はプロジェクトごとに変わる（G9）
+  assert.ok(buildBrief(goals, 'G9', 'node bin/saihai.mjs').includes('node bin/saihai.mjs log --goal G9'));
 });
 
 test('知らない ID なら失敗する', () => {

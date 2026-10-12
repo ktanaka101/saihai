@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/guard-main.mjs\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR/bin/saihai.mjs\" guard",
             "statusMessage": "main への直接の反映を確認中"
           }
         ]
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/check-goals.mjs\" --hook",
+            "command": "node \"$CLAUDE_PROJECT_DIR/bin/saihai.mjs\" check --hook --root \"$CLAUDE_PROJECT_DIR\"",
             "statusMessage": "ゴール文書の書式を検査中"
           }
         ]
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/check-goals.mjs\" --stop",
+            "command": "node \"$CLAUDE_PROJECT_DIR/bin/saihai.mjs\" check --stop --root \"$CLAUDE_PROJECT_DIR\"",
             "statusMessage": "ゴール文書の書式を検査中"
           }
         ]
