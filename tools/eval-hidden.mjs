@@ -2,7 +2,7 @@
 // 実装からは見えない評価（隠しシナリオ）を作って保管し、実行する（G3.3）。
 // 実装側の AI に伝えるのは、件数と、通し番号・具体例の ID だけ。中身は保管場所の外に出さない。
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,8 +24,15 @@ function countExamples(stored) {
 }
 
 // 2つの評価 AI が一致したケース（実装と違ったものも含む）を、中身の分からない通し番号で保管する
+// 引退したものも含めて、使った番号の続きを振る（記録の上で番号が重ならないように）
+function usedNumbers(targetDir) {
+  const retiredDir = join(targetDir, 'retired');
+  const retired = existsSync(retiredDir) ? readdirSync(retiredDir).flatMap((stamp) => scenarioIds(join(retiredDir, stamp))) : [];
+  return [...scenarioIds(targetDir), ...retired].map((n) => Number(n.match(SCENARIO)[1]));
+}
+
 function storeScenarios(results, targetDir) {
-  const ids = scenarioIds(targetDir).map((n) => Number(n.match(SCENARIO)[1]));
+  const ids = usedNumbers(targetDir);
   const first = ids.length ? Math.max(...ids) + 1 : 1;
   return results
     .filter((r) => r.kind === 'agreed' || r.kind === 'bug')
@@ -126,6 +133,22 @@ export function generateHidden({ targetName, goalsDir = GOALS_DIR, workRoot = tm
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+// 仕様を意図して変えたら、古い隠しシナリオは引退させる（retired/<日時>/ に移す）。中身は実装側に出さない
+export function retireHidden({ targetName, storeDir = STORE_DIR, reason = '仕様の変更' }) {
+  const targetDir = join(storeDir, targetName);
+  const ids = scenarioIds(targetDir);
+  if (ids.length === 0) return { code: 0, count: 0, summary: `引退させる隠しシナリオがありません（${targetName}）` };
+  const dest = join(targetDir, 'retired', new Date().toISOString().replace(/[:.]/g, '-'));
+  mkdirSync(dest, { recursive: true });
+  for (const id of ids) renameSync(join(targetDir, id), join(dest, id));
+  const committed = commitStore(storeDir, `隠しシナリオ ${ids.length} 件を引退（${targetName}、${reason}）`);
+  return {
+    code: committed ? 0 : 1,
+    count: ids.length,
+    summary: `隠しシナリオ ${ids.length} 件を引退させました（理由：${reason}）${committed ? '' : '。保管場所の git への記録に失敗しました'}`,
+  };
 }
 
 export function runHidden({ targetName, storeDir = STORE_DIR }) {
@@ -232,6 +255,8 @@ if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.u
         ? generateHidden({ targetName })
         : command === 'run'
           ? runHidden({ targetName })
+          : command === 'retire'
+            ? retireHidden({ targetName, reason: process.argv[4] })
           : command === 'audit'
             ? (({ summary, allowed }) => ({ summary, code: allowed ? 1 : 0 }))(auditContacts())
             : { code: 1, summary: '使い方：eval-hidden.mjs generate|run [評価対象] または eval-hidden.mjs audit' };

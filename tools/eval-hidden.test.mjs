@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { auditContacts, generateHidden, runHidden } from './eval-hidden.mjs';
+import { auditContacts, generateHidden, retireHidden, runHidden } from './eval-hidden.mjs';
 
 const GOALS_DIR = fileURLToPath(new URL('../goals/', import.meta.url));
 
@@ -23,7 +23,13 @@ updated: 2026-10-12
 
 ## 意図
 
-理由
+- 目的：目的の本文
+- 理由：理由の本文
+- 望ましい最終状態：最終状態の本文
+
+## 仮説と判定
+
+- 仮説：なし（理由：テスト用）
 
 ## 具体例
 
@@ -137,6 +143,19 @@ test('隠しシナリオがすべて通れば終了コード0', () => {
   const storeDir = tempDir('store');
   generate({ storeDir, launch: fakeLaunch({ cases: { a: CASES['secret-boundary-missing'] }, answers: { a: ANSWERS['secret-boundary-missing'] } }) });
   assert.equal(runHidden({ targetName: 'check-goals', storeDir }).code, 0);
+});
+
+test('仕様を変えたら、古い隠しシナリオを引退させる。引退したものは実行せず、番号は続きから振る', () => {
+  const storeDir = tempDir('store');
+  generate({ storeDir });
+  const r = retireHidden({ targetName: 'check-goals', storeDir, reason: '書式 v2' });
+  assert.equal(r.count, 2);
+  assert.match(r.summary, /2 件を引退/);
+  assert.match(runHidden({ targetName: 'check-goals', storeDir }).summary, /隠しシナリオがありません/);
+  generate({ storeDir });
+  assert.deepEqual(readdirSync(join(storeDir, 'check-goals')).filter((n) => /^h\d+$/.test(n)), ['h003', 'h004']);
+  const log = spawnSync('git', ['log', '--oneline'], { cwd: storeDir, encoding: 'utf8' });
+  assert.equal(log.stdout.trim().split('\n').length, 3);
 });
 
 test('隠しシナリオがなければ、そのことを伝える', () => {
