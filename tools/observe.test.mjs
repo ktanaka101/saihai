@@ -92,7 +92,10 @@ test('作業記録からは、人の発言と人への質問の件数だけを�
     { type: 'user', turnOrigin: 'sdk', message: { content: '非対話セッションの指示' } },
     { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } },
     { type: 'user', isMeta: true, turnOrigin: 'human', message: { content: 'meta' } },
-    { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{}, {}, {}] } }] } },
+    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'q', name: 'AskUserQuestion', input: { questions: [{}, {}, {}] } }] } },
+    // 観測のツールのソースを読んだ結果にも同じ文字列が入る。回答として数えない（G7 の観測の数え違い）
+    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'r', name: 'Read', input: {} }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'r', content: "c.content.includes('questions have been answered')\nmatchAll(/=\"([^\"]*)\"/g)" }] } },
     {
       type: 'user',
       message: {
