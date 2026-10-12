@@ -4,6 +4,7 @@
 import { readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkDecisions, decisionsPathOf, loadDecisions } from './decision-log.mjs';
 
 const GOALS_DIR = fileURLToPath(new URL('../goals/', import.meta.url));
 const REQUIRED_KEYS = ['id', 'parent', 'status', 'version', 'updated'];
@@ -12,8 +13,13 @@ const DECIDED_BY_HUMAN = ['達成', '中止']; // この状態にするのは人
 const HUMAN_LINE_LIMIT = 40; // 判断待ちを除く（J17）
 const PENDING_LIMIT = 5; // 1つの文書の判断待ちの上限（J45）
 const PENDING_LABELS = ['推奨', '自明な案', '取り消し']; // 「- 推奨：」のような箇条書きの見出し語。太字は任意
-const JUDGMENT_COLUMNS = 5; // ID・日付・判断・上申・置き換え
+const JUDGMENT_COLUMNS = 6; // ID・日付・判断・強さ・上申・置き換え（G1.2）
 const JUDGMENT_FROM = /^(―|Q\d+(\s*、\s*Q\d+)*)$/;
+const STRENGTHS = ['不変条件', '推奨', '仮置き']; // 制約と判例の強さ（G1.2・J58）
+const INTENT_LABELS = ['目的', '理由', '望ましい最終状態'];
+const ADOPTED = '推奨を採用（J37）'; // 熟考していない判断。不変条件にはできない
+const EXPRESSION = /^\s*(\S+)\s*(>=|<=|==|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/; // 観測の式：指標 演算子 数値
+const ID_REFERENCE = /G\d+(\.\d+)*(\.E\d+)?|J\d+|Q\d+|D\d+/;
 const FILE_NAME = /^(G\d+(?:\.\d+)*)-[a-z0-9-]+\.md$/;
 const FENCED = '\u0000'; // コードブロックの中身。行としては数えるが、見出しや表としては読まない
 const OK = { code: 0, out: '', err: '' };
@@ -23,7 +29,14 @@ const hasLabel = (lines, label) =>
   lines.some((line) => new RegExp(`^\\s*[-*]\\s*(\\*\\*)?${label}(\\*\\*)?：`).test(line)); // 揺れを許すのは太字だけ
 const qIds = (text) => [...(text ?? '').matchAll(/Q\d+/g)].map((m) => m[0]);
 
-function section(lines, name) {
+// 「仮説：なし」（立てない）か。「なしで済ませていた…」のような普通の仮説と取り違えない
+export const isNoHypothesis = (line) => /^- 仮説：なし\s*([（(。、.]|$)/.test(line);
+// 箇条の項目（-・*・番号）。水平線（* * * など）は項目ではない
+const ITEM = /^([-*]|\d+\.)\s/;
+const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+export const listItems = (lines) => (lines ?? []).filter((l) => ITEM.test(l) && !RULE.test(l));
+
+export function section(lines, name) {
   const start = lines.findIndex((line) => isHeading(line, name));
   if (start === -1) return null;
   const rest = lines.slice(start + 1);
@@ -81,15 +94,23 @@ function splitRow(line) {
   return inner.split(/(?<!\\)\|/).map((cell) => cell.trim());
 }
 
-// 上申列は ― か Q の ID だけ（複数は「、」か「,」区切り）。それ以外の書き方では、中の Q を拾わない。
+// 上申列は ― か Q の ID だけ（複数は「、」区切り）。それ以外の書き方では、中の Q を拾わない。
 function parseJudgments(lines) {
   return lines
     .filter((line) => /^\|\s*J\d+\s*\|/.test(line))
     .map(splitRow)
     .map((cells) => {
-      const fromValid = JUDGMENT_FROM.test(cells[3] ?? '');
-      return { id: cells[0], fromValid, from: fromValid ? qIds(cells[3]) : [], cells };
+      const fromValid = JUDGMENT_FROM.test(cells[4] ?? '');
+      return { id: cells[0], strength: cells[3], fromValid, from: fromValid ? qIds(cells[4]) : [], cells };
     });
+}
+
+// 観測の式（`指標 演算子 数値`）を取り出す。G7.1 の観測でも使う
+export function parseExpressions(line) {
+  return [...line.matchAll(/`([^`]*)`/g)].map((m) => {
+    const parsed = m[1].match(EXPRESSION);
+    return parsed ? { text: m[1], key: parsed[1], op: parsed[2], value: Number(parsed[3]) } : { text: m[1], invalid: true };
+  });
 }
 
 export function parseGoal(path, text) {
@@ -106,6 +127,7 @@ export function parseGoal(path, text) {
     frontmatter,
     hasBoundary: boundary !== -1,
     human,
+    ai,
     pendingSections: { human: countPending(human), ai: countPending(ai) },
     pendingItems: items,
     pendingStray: stray,
@@ -165,11 +187,82 @@ function formatViolations(goal) {
     ...pendingFormatViolations(goal),
     ...goal.judgments
       .filter((j) => j.cells.length !== JUDGMENT_COLUMNS)
-      .map((j) => `判例 ${j.id} の列数が${j.cells.length}です（ID・日付・判断・上申・置き換えの${JUDGMENT_COLUMNS}列）`),
+      .map((j) => `判例 ${j.id} の列数が${j.cells.length}です（ID・日付・判断・強さ・上申・置き換えの${JUDGMENT_COLUMNS}列）`),
     ...goal.judgments
       .filter((j) => j.cells.length === JUDGMENT_COLUMNS && !j.fromValid)
       .map((j) => `判例 ${j.id} の上申列は ― か Q の ID（複数は「、」区切り）にしてください`),
   ];
+}
+
+// --- 書式 v2（G1.2）：委任型の指示 ---
+
+function intentViolations(goal) {
+  const lines = section(goal.human, '意図');
+  if (!lines) return []; // 節がないことは G1.書式 で報告する
+  return INTENT_LABELS.filter((label) => !lines.some((l) => l.startsWith(`- ${label}：`))).map((label) => `意図に「- ${label}：」がありません`);
+}
+
+// 「理由：」のあとに本文があるか。空白と句読点だけなら理由がないのと同じ
+const hasReasonBody = (text) => !['', 'なし', '無し'].includes(text.replace(/[\s。、．.,）)]/g, ''));
+// 制約の理由は「— 理由：」の形で書く（G1.2 の設計の表。G3.4 の裁定で確かめた）
+const REASON_MARK = /—\s*理由：/;
+const reasonAfter = (line) => {
+  const m = line.match(REASON_MARK);
+  return m ? line.slice(m.index + m[0].length) : null;
+};
+
+function hypothesisViolations(goal) {
+  const lines = section(goal.human, '仮説と判定');
+  if (!lines) return ['「## 仮説と判定」がありません。仮説を立てないゴールは「- 仮説：なし（理由：…）」と書いてください'];
+  const hypothesis = lines.find((l) => l.startsWith('- 仮説：'));
+  if (!hypothesis) return ['仮説と判定に「- 仮説：」がありません'];
+  if (isNoHypothesis(hypothesis)) {
+    const reason = hypothesis.match(/^- 仮説：なし\s*[（(]理由：(.*)[）)]/)?.[1];
+    return reason !== undefined && hasReasonBody(reason) ? [] : ['仮説を立てないときは「- 仮説：なし（理由：…）」と理由を書いてください'];
+  }
+  return ['当たりの判定', '外れの判定'].filter((label) => !lines.some((l) => l.startsWith(`- ${label}：`))).map((label) => `仮説と判定に「- ${label}：」がありません`);
+}
+
+const constraintItems = (goal) =>
+  STRENGTHS.flatMap((name) => listItems(section(goal.human, name)).map((line) => ({ name, line: line.replace(ITEM, '- ') })));
+
+function constraintViolations(goal) {
+  return [
+    // 古い節は、人間層でも AI 層でも違反（G1.2.E3 は人間層に限っていない）
+    ...(section(goal.human, '制約') || section(goal.ai, '制約') ? ['「## 制約」は「## 不変条件」「## 推奨」「## 仮置き」に分けてください（J58）'] : []),
+    ...constraintItems(goal)
+      .filter(({ line }) => reasonAfter(line) === null || !hasReasonBody(reasonAfter(line)))
+      .map(({ name, line }) => `${name}の「${line.slice(2, 40)}」に理由（— 理由：…）がありません`),
+  ];
+}
+
+function strengthViolations(goal) {
+  return goal.judgments
+    .filter((j) => j.cells.length === JUDGMENT_COLUMNS)
+    .flatMap((j) => {
+      if (!STRENGTHS.includes(j.strength)) return [`判例 ${j.id} の強さ「${j.strength}」は ${STRENGTHS.join('・')} のどれかにしてください`];
+      if (j.strength === '不変条件' && j.cells[2].includes(ADOPTED)) return [`判例 ${j.id} は推奨を採用しただけ（J37）なので、不変条件にはできません`];
+      return [];
+    });
+}
+
+function expressionViolations(goal) {
+  return (section(goal.human, '仮説と判定') ?? [])
+    .filter((l) => /^- (当たり|外れ)の判定：/.test(l))
+    .flatMap(parseExpressions)
+    .filter((e) => e.invalid)
+    .map((e) => `観測の式「${e.text}」は「指標 演算子 数値」の形にしてください（演算子は >= <= > < ==）`);
+}
+
+// 警告（違反ではない）：理由がどのゴール・具体例・判例・判断ログの ID にも触れていない制約（委任型の指示の原則4）
+export function warnGoal(goal) {
+  return constraintItems(goal)
+    .filter(({ line }) => reasonAfter(line) !== null && !ID_REFERENCE.test(reasonAfter(line)))
+    .map(({ name, line }) => ({
+      path: goal.path,
+      rule: 'G1.2.警告',
+      message: `${name}の「${line.slice(2, 40)}」の理由が、どのゴール・具体例・判例にも触れていません`,
+    }));
 }
 
 function closedWithoutJudgment(goal) {
@@ -198,6 +291,11 @@ export function checkGoal(goal) {
         : [];
     }),
     ...formatViolations(goal).map((message) => ['G1.書式', message]),
+    ...intentViolations(goal).map((message) => ['G1.2.E1', message]),
+    ...hypothesisViolations(goal).map((message) => ['G1.2.E2', message]),
+    ...constraintViolations(goal).map((message) => ['G1.2.E3', message]),
+    ...strengthViolations(goal).map((message) => ['G1.2.E4', message]),
+    ...expressionViolations(goal).map((message) => ['G1.2.E5', message]),
   ];
   return found.map(([rule, message]) => ({ path: goal.path, rule, message }));
 }
@@ -301,12 +399,21 @@ export function run({ argv = [], stdin = '', goalsDir: defaultDir = GOALS_DIR } 
     input = mode === 'cli' ? {} : parseInput(stdin);
     if (mode === 'hook') {
       const file = input.tool_input?.file_path;
-      if (!file || !isGoalFile(file, goalsDir)) return OK;
+      const isDecisions = file && realPath(file) === realPath(decisionsPathOf(goalsDir));
+      if (!file || !(isGoalFile(file, goalsDir) || isDecisions)) return OK;
     }
     const goals = loadGoals(goalsDir);
-    const violations = checkRepo(goals);
+    const goalIds = goals.map((g) => g.frontmatter?.id).filter(Boolean);
+    // 判断ログ（G8）も同じ検査で確かめる
+    const violations = [...checkRepo(goals), ...checkDecisions(loadDecisions(goalsDir), goalIds)];
     if (violations.length === 0) {
-      return mode === 'cli' ? { ...OK, out: `ゴール文書 ${goals.length} 件：違反なし\n` } : OK;
+      // 警告は違反ではないので終了コードは0のまま。フックでは出さない（AI の作業を止めないため）
+      const warnings = goals.flatMap(warnGoal);
+      const out = [
+        `ゴール文書 ${goals.length} 件：違反なし${warnings.length ? `（警告 ${warnings.length} 件）` : ''}`,
+        ...warnings.map((w) => `${w.path}: [${w.rule}] ${w.message}`),
+      ].join('\n');
+      return mode === 'cli' ? { ...OK, out: `${out}\n` } : OK;
     }
     return respond(mode, input, [
       ...violations.map((v) => `${v.path}: [${v.rule}] ${v.message}`),

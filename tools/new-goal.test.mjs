@@ -20,7 +20,13 @@ updated: 2026-10-12
 
 ## 意図
 
-理由
+- 目的：目的の本文
+- 理由：理由の本文
+- 望ましい最終状態：最終状態の本文
+
+## 仮説と判定
+
+- 仮説：なし（理由：テスト用）
 
 ## 具体例
 
@@ -49,6 +55,9 @@ test('雛形はそのままゴール文書の検査を通る（G2.E2）', () => 
   assert.match(text, /^# G7 現実からの観測$/m);
   assert.match(text, /^> 観測を集める$/m);
   assert.match(text, /^status: 議論中$/m);
+  assert.match(text, /## 仮説と判定/);
+  assert.match(text, /## 不変条件/);
+  assert.match(text, /## 報告条件/);
   assert.match(text, /### 前提/);
   assert.match(text, /### 調べたこと/);
   assert.match(text, /### 既知の落とし穴/);

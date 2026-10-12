@@ -5,7 +5,7 @@ import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkGoal, checkRepo, isGoalFile, loadGoals, parseGoal, run } from './check-goals.mjs';
+import { checkGoal, checkRepo, isGoalFile, loadGoals, parseGoal, run, warnGoal } from './check-goals.mjs';
 
 const VALID = `---
 id: G9
@@ -21,7 +21,13 @@ updated: 2026-10-12
 
 ## 意図
 
-理由
+- 目的：目的の本文
+- 理由：理由の本文
+- 望ましい最終状態：最終状態の本文
+
+## 仮説と判定
+
+- 仮説：なし（理由：テスト用）
 
 ## 具体例
 
@@ -33,8 +39,8 @@ updated: 2026-10-12
 
 ### 判例
 
-| ID | 日付 | 判断 | 上申 | 置き換え |
-|---|---|---|---|---|
+| ID | 日付 | 判断 | 強さ | 上申 | 置き換え |
+|---|---|---|---|---|---|
 `;
 
 const PENDING_OK = `## 判断待ち
@@ -47,6 +53,7 @@ const PENDING_OK = `## 判断待ち
 
 `;
 
+const HYPO = '- 仮説：なし（理由：テスト用）';
 const parse = (text, name = 'G9-test.md') => parseGoal(`goals/${name}`, text);
 const rules = (violations) => violations.map((v) => v.rule);
 const withPending = (text, pending) => text.replace('## 意図', `${pending}## 意図`);
@@ -83,7 +90,7 @@ test('G1.E2: 境界の見出しがなければ違反', () => {
 
 test('G1.E3: 人間層が40行を超えれば違反', () => {
   const long = Array.from({ length: 40 }, (_, i) => `- 行${i}`).join('\n');
-  const text = VALID.replace('理由', `理由\n${long}`);
+  const text = VALID.replace(HYPO, `${HYPO}\n${long}`);
   assert.deepEqual(rules(checkGoal(parse(text))), ['G1.E3']);
 });
 
@@ -121,14 +128,14 @@ test('G1 書式: 判例の列数が5でなければ違反', () => {
 test('G1.E5: 判例に移った Q が判断待ちに残っていれば違反', () => {
   const v = checkRepo([
     goal('G8', (t) => withPending(t, PENDING_OK)),
-    goal('G9', (t) => withJudgment(t, '| J1 | 2026-10-12 | 判断 | Q3 | ― |')),
+    goal('G9', (t) => withJudgment(t, '| J1 | 2026-10-12 | 判断 | 推奨 | Q3 | ― |')),
   ]);
   assert.deepEqual(rules(v), ['G1.E5']);
   assert.match(v[0].message, /Q3.*J1/);
 });
 
 test('G1.E6: 判例の ID が重複すれば違反', () => {
-  const row = '| J1 | 2026-10-12 | 判断 | ― | ― |';
+  const row = '| J1 | 2026-10-12 | 判断 | 推奨 | ― | ― |';
   const v = checkRepo([goal('G8', (t) => withJudgment(t, row)), goal('G9', (t) => withJudgment(t, row))]);
   assert.deepEqual(rules(v), ['G1.E6']);
 });
@@ -140,7 +147,7 @@ test('G1.E6: 判断待ちの ID が重複すれば違反', () => {
 
 test('G1.E6: 同じ Q から複数の判例があれば違反', () => {
   const v = checkRepo([
-    goal('G9', (t) => withJudgment(withJudgment(t, '| J1 | 2026-10-12 | 判断 | Q3 | ― |'), '| J2 | 2026-10-12 | 判断 | Q3 | ― |')),
+    goal('G9', (t) => withJudgment(withJudgment(t, '| J1 | 2026-10-12 | 判断 | 推奨 | Q3 | ― |'), '| J2 | 2026-10-12 | 判断 | 推奨 | Q3 | ― |')),
   ]);
   assert.deepEqual(rules(v), ['G1.E6']);
 });
@@ -261,25 +268,25 @@ test('ファイル名が G{番号}-{名前}.md でなければ違反', () => {
 
 test('コードブロックの中の見出しは境界として扱わない', () => {
   const long = Array.from({ length: 41 }, (_, i) => `- 行${i}`).join('\n');
-  const text = VALID.replace('理由', `理由\n\n\`\`\`md\n## AI 層\n\`\`\`\n\n${long}`);
+  const text = VALID.replace(HYPO, `${HYPO}\n\n\`\`\`md\n## AI 層\n\`\`\`\n\n${long}`);
   assert.deepEqual(rules(checkGoal(parse(text))), ['G1.E3']);
 });
 
 test('コードブロックの中の表は判例として扱わない', () => {
-  const text = VALID.replace('理由', '理由\n\n```md\n| J1 | 例 |\n```');
+  const text = VALID.replace(HYPO, HYPO + '\n\n```md\n| J1 | 例 |\n```');
   assert.deepEqual(checkGoal(parse(text)), []);
 });
 
 test('G1.E5: 上申列に複数の Q があっても、判断待ちに残っていれば違反', () => {
   const v = checkRepo([
     goal('G8', (t) => withPending(t, PENDING_OK)),
-    goal('G9', (t) => withJudgment(t, '| J1 | 2026-10-12 | 判断 | Q3、Q4 | ― |')),
+    goal('G9', (t) => withJudgment(t, '| J1 | 2026-10-12 | 判断 | 推奨 | Q3、Q4 | ― |')),
   ]);
   assert.deepEqual(rules(v), ['G1.E5']);
 });
 
 test('エスケープしたパイプや末尾のパイプがない行も正しく列を数える', () => {
-  for (const row of ['| J1 | 2026-10-12 | `a\\|b` を使う | ― | ― |', '| J1 | 2026-10-12 | 判断 | ― | ―']) {
+  for (const row of ['| J1 | 2026-10-12 | `a\\|b` を使う | 推奨 | ― | ― |', '| J1 | 2026-10-12 | 判断 | 推奨 | ― | ―']) {
     assert.deepEqual(checkGoal(parse(withJudgment(VALID, row))), [], row);
   }
 });
@@ -330,13 +337,13 @@ test('Q の見出しは番号の直後に記号が続いてもよい', () => {
 });
 
 test('コードブロックは開いたときと同じ記号で閉じる', () => {
-  assert.deepEqual(checkGoal(parse(VALID.replace('理由', '理由\n\n```\n~~~\n```'))), []);
+  assert.deepEqual(checkGoal(parse(VALID.replace(HYPO, HYPO + '\n\n```\n~~~\n```'))), []);
 });
 
 test('上申列は ― か Q の ID だけ。それ以外の書き方は違反にし、中の Q を拾わない', () => {
   const v = checkRepo([
     goal('G8', (t) => withPending(t, PENDING_OK.replace('Q3', 'Q2'))),
-    goal('G9', (t) => withJudgment(t, '| J1 | 2026-10-12 | 判断 | Q3（Q2 とは別） | ― |')),
+    goal('G9', (t) => withJudgment(t, '| J1 | 2026-10-12 | 判断 | 推奨 | Q3（Q2 とは別） | ― |')),
   ]);
   assert.deepEqual(rules(v), ['G1.書式']);
 });
@@ -344,12 +351,12 @@ test('上申列は ― か Q の ID だけ。それ以外の書き方は違反�
 // G3.E6：実装を見ない評価 AI が、仕様とのずれを見つけた（G1 の書式の定義が正）
 
 test('上申列の Q は「、」で区切って複数書ける', () => {
-  assert.deepEqual(checkGoal(parse(withJudgment(VALID, '| J1 | 2026-10-12 | 判断 | Q3、Q4 | ― |'))), []);
+  assert.deepEqual(checkGoal(parse(withJudgment(VALID, '| J1 | 2026-10-12 | 判断 | 推奨 | Q3、Q4 | ― |'))), []);
 });
 
 test('上申列を「,」で区切ると違反（書式の定義は「、」区切り）', () => {
   for (const from of ['Q3, Q4', 'Q3,Q4']) {
-    assert.deepEqual(rules(checkGoal(parse(withJudgment(VALID, `| J1 | 2026-10-12 | 判断 | ${from} | ― |`)))), ['G1.書式'], from);
+    assert.deepEqual(rules(checkGoal(parse(withJudgment(VALID, `| J1 | 2026-10-12 | 判断 | 推奨 | ${from} | ― |`)))), ['G1.書式'], from);
   }
 });
 
@@ -398,13 +405,13 @@ test('G1.E10: 達成・中止のゴールに、それを決めた判例がなけ
 
 test('G1.E10: 達成・中止を決めた判例があれば違反なし', () => {
   for (const status of ['達成', '中止']) {
-    const text = withJudgment(VALID.replace('status: 進行中', `status: ${status}`), `| J1 | 2026-10-12 | G9 を${status}とする | Q3 | ― |`);
+    const text = withJudgment(VALID.replace('status: 進行中', `status: ${status}`), `| J1 | 2026-10-12 | G9 を${status}とする | 推奨 | Q3 | ― |`);
     assert.deepEqual(checkGoal(parse(text)), [], status);
   }
 });
 
 test('G1.E10: 別の状態を決めた判例では足りない', () => {
-  const text = withJudgment(VALID.replace('status: 進行中', 'status: 達成'), '| J1 | 2026-10-12 | G9 を中止とする | Q3 | ― |');
+  const text = withJudgment(VALID.replace('status: 進行中', 'status: 達成'), '| J1 | 2026-10-12 | G9 を中止とする | 推奨 | Q3 | ― |');
   assert.deepEqual(rules(checkGoal(parse(text))), ['G1.E10']);
 });
 
@@ -430,6 +437,122 @@ test('CLI: シンボリックリンク経由で起動しても検査が実際に
   const r = spawnSync(process.execPath, [join(link, 'tools', 'check-goals.mjs')], { encoding: 'utf8' });
   assert.equal(r.status, 0);
   assert.match(r.stdout, /違反なし/);
+});
+
+// --- 書式 v2（G1.2）：委任型の指示 ---
+
+const withSection = (text, section) => text.replace('## 具体例', `${section}\n\n## 具体例`);
+
+test('G1.2.E1: 意図に目的・理由・望ましい最終状態のどれかがなければ違反', () => {
+  for (const label of ['目的', '理由', '望ましい最終状態']) {
+    const v = checkGoal(parse(VALID.replace(new RegExp(`- ${label}：[^\\n]*\\n`), '')));
+    assert.deepEqual(rules(v), ['G1.2.E1'], label);
+    assert.match(v[0].message, new RegExp(label));
+  }
+});
+
+test('G1.2.E2: 仮説と判定がなければ違反。仮説を立てるなら当たりと外れの判定が要る', () => {
+  assert.deepEqual(rules(checkGoal(parse(VALID.replace(/## 仮説と判定\n\n[^\n]*\n\n/, '')))), ['G1.2.E2']);
+  const withHypothesis = (lines) => VALID.replace(HYPO, lines);
+  assert.deepEqual(rules(checkGoal(parse(withHypothesis('- 仮説：使われるはず\n- 当たりの判定：使われる')))), ['G1.2.E2']);
+  assert.deepEqual(checkGoal(parse(withHypothesis('- 仮説：使われるはず\n- 当たりの判定：使われる\n- 外れの判定：使われない'))), []);
+});
+
+test('G1.2.E3: 不変条件・推奨・仮置きの各項目に理由がなければ違反', () => {
+  for (const name of ['不変条件', '推奨', '仮置き']) {
+    assert.deepEqual(checkGoal(parse(withSection(VALID, `## ${name}\n\n- 守る — 理由：G0 のため`))), [], name);
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## ${name}\n\n- 守る`)))), ['G1.2.E3'], name);
+  }
+});
+
+test('G1.2.E2: 仮説を立てないときは、理由が要る（「仮説：なし（理由：…）」）', () => {
+  const withHypothesis = (line) => VALID.replace(HYPO, line);
+  for (const bad of ['- 仮説：なし', '- 仮説：なし（理由：）', '- 仮説：なし（理由： ）', '- 仮説：なし。手段なので']) {
+    assert.deepEqual(rules(checkGoal(parse(withHypothesis(bad)))), ['G1.2.E2'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withHypothesis('- 仮説：なし（理由：G3 の手段）'))), []);
+  assert.deepEqual(checkGoal(parse(withHypothesis('- 仮説：なし(理由：G3 の手段)'))), []);
+});
+
+test('G1.2.E3: 「理由：」のあとに本文がなければ、理由がないのと同じく違反', () => {
+  for (const bad of ['- 守る — 理由：', '- 守る — 理由： ', '- 守る — 理由：。']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 推奨\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+});
+
+test('G1.2.E3: 「-」以外の箇条（「*」・番号）で書いた項目も、理由がなければ違反', () => {
+  for (const bad of ['* 守る', '1. 守る']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 不変条件\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 不変条件\n\n* 守る — 理由：G0 のため'))), []);
+});
+
+test('G1.2.E3: 「理由：なし」は理由がないのと同じく違反', () => {
+  for (const bad of ['- 守る — 理由：なし', '- 守る — 理由：なし。']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 仮置き\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 仮置き\n\n- 守る — 理由：なしでは困るから（G0）'))), []);
+});
+
+test('G1.2.E3: 古い「## 制約」の節は、AI 層にあっても違反', () => {
+  assert.deepEqual(rules(checkGoal(parse(`${VALID}\n## 制約\n\n- 守る — 理由：G0 のため\n`))), ['G1.2.E3']);
+});
+
+test('G1.2.E3: 理由は「— 理由：」の形で書く。括弧書きや句点の後ろの「理由：」は違反（G3.4 の裁定で h070）', () => {
+  for (const bad of ['- 守る（理由：G0 のため）', '- 守る。理由：G0 のため', '- 守る - 理由：G0 のため']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 仮置き\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 仮置き\n\n- 守る —理由：G0 のため'))), []);
+});
+
+test('G1.2.E2: 「なし」で始まるだけの普通の仮説は、「仮説：なし」と取り違えない', () => {
+  const doc = VALID.replace(HYPO, '- 仮説：なしで済ませていた確認を自動化すると、見落としが減る\n- 当たりの判定：減る\n- 外れの判定：減らない');
+  assert.deepEqual(checkGoal(parse(doc)), []);
+  // 普通の仮説なので、当たりと外れの判定がそれぞれ要る
+  assert.deepEqual(rules(checkGoal(parse(VALID.replace(HYPO, '- 仮説：なしで済ませていた確認を自動化する')))), ['G1.2.E2', 'G1.2.E2']);
+});
+
+test('G1.2.E3: 制約の節の水平線（* * * など）は項目とみなさない', () => {
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 推奨\n\n- 守る — 理由：G0 のため\n\n* * *'))), []);
+});
+
+test('G1.2.E3: 古い「## 制約」の節は違反', () => {
+  assert.deepEqual(rules(checkGoal(parse(withSection(VALID, '## 制約\n\n- 守る — 理由：G0 のため')))), ['G1.2.E3']);
+});
+
+test('G1.2.E4: 判例の強さは不変条件・推奨・仮置きのどれか', () => {
+  assert.deepEqual(rules(checkGoal(parse(withJudgment(VALID, '| J1 | 2026-10-12 | 判断 | 必須 | ― | ― |')))), ['G1.2.E4']);
+});
+
+test('G1.2.E4: 推奨を採用しただけの判例（J37）は不変条件にできない', () => {
+  const row = (strength) => `| J1 | 2026-10-12 | 何かにする。推奨を採用（J37） | ${strength} | Q3 | ― |`;
+  assert.deepEqual(rules(checkGoal(parse(withJudgment(VALID, row('不変条件'))))), ['G1.2.E4']);
+  assert.deepEqual(checkGoal(parse(withJudgment(VALID, row('仮置き')))), []);
+});
+
+test('G1.2.E5: 観測の式の書き方が誤っていれば違反', () => {
+  const judged = (expr) => VALID.replace(HYPO, `- 仮説：使われるはず\n- 当たりの判定：使われる（観測：\`${expr}\`）\n- 外れの判定：使われない（観測：\`利用者数 < 1\`）`);
+  assert.deepEqual(checkGoal(parse(judged('利用者数 >= 10'))), []);
+  assert.deepEqual(checkGoal(parse(judged('推奨どおりの割合 >= 0.8'))), []);
+  for (const bad of ['利用者数 が多い', '>= 10', '利用者数 => 10']) {
+    assert.deepEqual(rules(checkGoal(parse(judged(bad)))), ['G1.2.E5'], bad);
+  }
+});
+
+test('警告：制約の理由がどの ID にも触れていなければ警告する（違反ではない）', () => {
+  const g = parse(withSection(VALID, '## 推奨\n\n- 短く書く — 理由：読みやすいから\n- 小さく変える — 理由：戻しやすい（J7）'));
+  assert.deepEqual(checkGoal(g), []);
+  const w = warnGoal(g);
+  assert.equal(w.length, 1);
+  assert.match(w[0].message, /短く書く/);
+});
+
+test('run: 警告は出力するが、終了コードは0のまま', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'saihai-warn-'));
+  writeFileSync(join(dir, 'G9-test.md'), withSection(VALID, '## 推奨\n\n- 短く書く — 理由：読みやすいから'));
+  const r = run({ goalsDir: dir });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /警告 1 件/);
 });
 
 test('このリポジトリのゴール文書はすべて書式に従っている', () => {

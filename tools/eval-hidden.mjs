@@ -2,11 +2,11 @@
 // 実装からは見えない評価（隠しシナリオ）を作って保管し、実行する（G3.3）。
 // 実装側の AI に伝えるのは、件数と、通し番号・具体例の ID だけ。中身は保管場所の外に出さない。
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TARGETS, compare } from './eval-goals.mjs';
+import { TARGETS, compare, evaluatorArgs, launchClaude, prepareWorkspace } from './eval-goals.mjs';
 import { generateAndPredict, selectQuestions } from './eval-split.mjs';
 
 const GOALS_DIR = fileURLToPath(new URL('../goals/', import.meta.url));
@@ -24,8 +24,15 @@ function countExamples(stored) {
 }
 
 // 2つの評価 AI が一致したケース（実装と違ったものも含む）を、中身の分からない通し番号で保管する
+// 引退したものも含めて、使った番号の続きを振る（記録の上で番号が重ならないように）
+function usedNumbers(targetDir) {
+  const retiredDir = join(targetDir, 'retired');
+  const retired = existsSync(retiredDir) ? readdirSync(retiredDir).flatMap((stamp) => scenarioIds(join(retiredDir, stamp))) : [];
+  return [...scenarioIds(targetDir), ...retired].map((n) => Number(n.match(SCENARIO)[1]));
+}
+
 function storeScenarios(results, targetDir) {
-  const ids = scenarioIds(targetDir).map((n) => Number(n.match(SCENARIO)[1]));
+  const ids = usedNumbers(targetDir);
   const first = ids.length ? Math.max(...ids) + 1 : 1;
   return results
     .filter((r) => r.kind === 'agreed' || r.kind === 'bug')
@@ -128,6 +135,139 @@ export function generateHidden({ targetName, goalsDir = GOALS_DIR, workRoot = tm
   }
 }
 
+// 仕様を意図して変えたら、古い隠しシナリオは引退させる（retired/<日時>/ に移す）。中身は実装側に出さない
+// only を渡すと、そのシナリオだけを引退させる（裁定の結果など）
+export function retireHidden({ targetName, storeDir = STORE_DIR, reason = '仕様の変更', only }) {
+  const targetDir = join(storeDir, targetName);
+  const ids = scenarioIds(targetDir).filter((id) => !only || only.includes(id));
+  if (ids.length === 0) return { code: 0, count: 0, summary: `引退させる隠しシナリオがありません（${targetName}）` };
+  const dest = join(targetDir, 'retired', new Date().toISOString().replace(/[:.]/g, '-'));
+  mkdirSync(dest, { recursive: true });
+  for (const id of ids) renameSync(join(targetDir, id), join(dest, id));
+  const what = only ? `${ids.join('・')} ` : `${ids.length} 件`;
+  const committed = commitStore(storeDir, `隠しシナリオ ${what}を引退（${targetName}、${reason}）`);
+  return {
+    code: committed ? 0 : 1,
+    count: ids.length,
+    dest,
+    summary: `隠しシナリオ ${what}を引退させました（理由：${reason}）${committed ? '' : '。保管場所の git への記録に失敗しました'}`,
+  };
+}
+
+// --- 裁定（G3.4）：落ちた隠しシナリオの期待が仕様から導けるかを、実装を見ない別の AI が確かめる ---
+// 2つの評価 AI は同じモデルなので、同じ読み違いで一致しうる。実装側が原因を見つけられないとき、推測で直し続けずにここで決着させる
+
+const APPEAL_BUDGET_USD = 1.5;
+const VERDICTS = ['期待が正しい', '実装が正しい', '仕様から決まらない'];
+
+function adjudicatorPrompt(target, specFiles) {
+  return `あなたは「裁定役」です。実装は見ずに、仕様（spec/ のゴール文書）だけを根拠に裁定します。
+
+${target.description}
+
+仕様のファイルは次のとおり（これ以外にはありません）。
+${specFiles.map((name) => `- spec/${name}`).join('\n')}
+
+case/ には、評価対象に検査させた入力（*.md）と、2つの評価 AI が独立に仕様から導いて一致した期待（case/expected.json の exit と rules。reasons は2つの評価 AI の理由）があります。
+actual.json は、今の実装が同じ入力に返した結果です。期待と実装が食い違っています。
+
+## やること
+
+1. spec/ と case/ と actual.json を読む
+2. 仕様の文言だけから、どちらが正しいかを裁定する。2つの評価 AI が同じ読み違いをしている可能性も疑う
+   - 期待が正しい：仕様の文言から期待が導け、実装はそれに反している
+   - 実装が正しい：仕様の文言から実装の結果が導け、期待は仕様に反している
+   - 仕様から決まらない：仕様の文言からはどちらとも決められない（人が仕様を決める必要がある）
+3. verdict.json に次の形で書く
+   {"verdict": "期待が正しい", "quote": "根拠にした仕様の一文", "question": "仕様から決まらないときだけ、人に聞く問い（それ以外は空）"}
+
+## 守ること
+
+- quote には、spec/ のどれかのファイルの1行から、根拠の部分をそのまま写す（言い換え・要約・入力の説明を混ぜない）。quote 以外は実装側に伝わらない
+- spec/・case/・actual.json 以外のファイルを読まない。verdict.json 以外のファイルを書かない
+`;
+}
+
+function readVerdict(path) {
+  try {
+    const v = JSON.parse(readFileSync(path, 'utf8'));
+    return VERDICTS.includes(v.verdict) && typeof v.quote === 'string' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// 実装側に返すのは、仕様にそのまま書かれている1行の中の文だけ（隠しシナリオの中身を混ぜさせない）。
+// 裁定役は作業フォルダの仕様の写しを書き換えられるので、照合はリポジトリの原本で行う
+function quotedFromSpec(quote, goalsDir, specFiles) {
+  const q = quote.trim();
+  if (q.length < 8 || /[\r\n]/.test(q)) return null;
+  return specFiles.some((name) => readFileSync(join(goalsDir, name), 'utf8').includes(q)) ? q : null;
+}
+
+function writeAppealReport({ id, scenarioDir, verdict }) {
+  const reportDir = mkdtempSync(join(realpathSync(tmpdir()), 'saihai-appeal-report-'));
+  const caseDir = join(reportDir, 'case');
+  mkdirSync(caseDir, { recursive: true });
+  for (const name of readdirSync(scenarioDir)) copyFileSync(join(scenarioDir, name), join(caseDir, name));
+  const lines = [
+    `# 仕様から決まらなかった隠しシナリオ（${id}。引退済み）`,
+    '',
+    `- 人への問い：${verdict.question || '（裁定役が問いを書かなかった）'}`,
+    `- 関わる仕様：${verdict.quote}`,
+    `- 入力と、2つの評価 AI の期待：${caseDir}`,
+    '',
+  ];
+  writeFileSync(join(reportDir, 'report.md'), lines.join('\n'));
+  return reportDir;
+}
+
+export function appealHidden({ targetName, id, goalsDir = GOALS_DIR, workRoot = tmpdir(), storeDir = STORE_DIR, launch = launchClaude }) {
+  const target = TARGETS[targetName];
+  if (!target) throw new Error(`評価対象 ${targetName} はありません（${Object.keys(TARGETS).join('・')} のどれか）`);
+  const targetDir = join(storeDir, targetName);
+  const scenarioDir = join(targetDir, id ?? '');
+  if (!id || !scenarioIds(targetDir).includes(id)) return { code: 1, summary: `隠しシナリオ ${id} がありません（${targetName}）` };
+  let expected;
+  try {
+    expected = JSON.parse(readFileSync(join(scenarioDir, 'expected.json'), 'utf8'));
+  } catch {
+    // 例外の文には中身の一部が混ざるので、決まった文言だけを返す
+    return { code: 1, summary: `${id} の expected.json を読めません。保管場所の記録を確かめてください` };
+  }
+  const actual = target.run(scenarioDir);
+  if (compare(expected, actual)) return { code: 0, summary: `${id} は今の実装で通っているので、裁定は要りません` };
+
+  const root = mkdtempSync(join(realpathSync(workRoot), 'saihai-appeal-'));
+  const workDir = join(root, 'adjudicator');
+  try {
+    mkdirSync(join(workDir, 'case'), { recursive: true });
+    const specFiles = prepareWorkspace({ goalsDir, specIds: target.specIds, workDir });
+    for (const name of readdirSync(scenarioDir)) copyFileSync(join(scenarioDir, name), join(workDir, 'case', name));
+    writeFileSync(join(workDir, 'actual.json'), JSON.stringify(actual, null, 2));
+    const { status } = launch({ args: evaluatorArgs(adjudicatorPrompt(target, specFiles), APPEAL_BUDGET_USD), cwd: workDir, log: join(root, 'adjudicator.jsonl') });
+    const verdict = status === 0 ? readVerdict(join(workDir, 'verdict.json')) : null;
+    const quote = verdict && quotedFromSpec(verdict.quote, goalsDir, specFiles);
+    moveLogs(root, targetDir);
+    commitStore(storeDir, `隠しシナリオ ${id} の裁定の記録（${targetName}）`);
+    if (!verdict) return { code: 1, summary: `${id} の裁定ができませんでした（裁定役の終了コード ${status}、または verdict.json の不備）` };
+    if (!quote) return { code: 1, summary: `${id} の裁定は「${verdict.verdict}」でしたが、根拠の一文が仕様にありません。中身が漏れうるので根拠は返しません` };
+    if (verdict.verdict === '期待が正しい') {
+      return { code: 1, summary: `${id} の裁定：期待が仕様どおりです。実装を直してください。根拠の仕様：「${quote}」` };
+    }
+    if (verdict.verdict === '実装が正しい') {
+      const r = retireHidden({ targetName, storeDir, reason: `裁定で期待が仕様に反していた（根拠：${quote}）`, only: [id] });
+      return { code: r.code, summary: `${id} の裁定：期待が仕様に反していたので、${id} を引退させました。根拠の仕様：「${quote}」` };
+    }
+    const retired = retireHidden({ targetName, storeDir, reason: '裁定で仕様から決まらなかった', only: [id] });
+    const reportDir = writeAppealReport({ id, scenarioDir: join(retired.dest, id), verdict: { ...verdict, quote } });
+    const note = retired.code === 0 ? '' : '。保管場所の git への記録に失敗しました';
+    return { code: 1, reportDir, summary: `${id} の裁定：仕様から決まらないので引退させ、人への問いにしました（${join(reportDir, 'report.md')}）${note}` };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 export function runHidden({ targetName, storeDir = STORE_DIR }) {
   const target = TARGETS[targetName];
   if (!target) throw new Error(`評価対象 ${targetName} はありません（${Object.keys(TARGETS).join('・')} のどれか）`);
@@ -223,6 +363,8 @@ function realPath(path) {
 
 // node tools/eval-hidden.mjs generate [評価対象]   隠しシナリオを作って保管する
 // node tools/eval-hidden.mjs run [評価対象]        隠しシナリオを実行する
+// node tools/eval-hidden.mjs retire [評価対象] [理由] 隠しシナリオをすべて引退させる
+// node tools/eval-hidden.mjs appeal [評価対象] [h番号] 落ちた隠しシナリオを裁定する（G3.4）
 // node tools/eval-hidden.mjs audit                 保管場所への接触を作業記録から探す
 if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, targetName = 'check-goals'] = process.argv.slice(2);
@@ -232,9 +374,13 @@ if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.u
         ? generateHidden({ targetName })
         : command === 'run'
           ? runHidden({ targetName })
+          : command === 'retire'
+            ? retireHidden({ targetName, reason: process.argv[4] })
+          : command === 'appeal'
+            ? appealHidden({ targetName, id: process.argv[4] })
           : command === 'audit'
             ? (({ summary, allowed }) => ({ summary, code: allowed ? 1 : 0 }))(auditContacts())
-            : { code: 1, summary: '使い方：eval-hidden.mjs generate|run [評価対象] または eval-hidden.mjs audit' };
+            : { code: 1, summary: '使い方：eval-hidden.mjs generate|run|retire|appeal [評価対象] または eval-hidden.mjs audit' };
     process.stdout.write(`${result.summary}\n`);
     process.exitCode = result.code;
   } catch (error) {

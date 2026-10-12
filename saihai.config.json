@@ -1,0 +1,8 @@
+{
+  "probes": {
+    "実装後の落とし穴": {
+      "command": "printf '%s %s\\n' \"$(git log main --format=%s | grep -c '^fix')\" \"$(git log main --merges --format=%s | grep -c '門番を通過')\"",
+      "examples": ["G3（仮説）"]
+    }
+  }
+}

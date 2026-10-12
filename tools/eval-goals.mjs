@@ -32,12 +32,12 @@ export function parseRules(stderr) {
 
 export const TARGETS = {
   'check-goals': {
-    specIds: ['G1', 'G1.1'],
+    specIds: ['G1', 'G1.1', 'G1.2'],
     description: [
-      '評価対象は「ゴール文書の検査ツール」。仕様は spec/ の G1（ゴール文書の書式）と G1.1（検査ツール）。',
+      '評価対象は「ゴール文書の検査ツール」。仕様は spec/ の G1（ゴール文書の書式）、G1.1（検査ツール）、G1.2（書式 v2）。',
       '検査ツールは、ケースのフォルダにある *.md をすべてゴール文書として検査する。',
       '違反がなければ終了コード0、違反があれば終了コード1。',
-      '違反は、G1 のどの具体例に反しているかを ID（G1.E1 など。書式の定義に関するものは G1.書式）で報告する。',
+      '違反は、どの具体例に反しているかを ID で報告する。G1 の具体例は G1.E1 など、G1.2（書式 v2）の具体例は G1.2.E1 など、書式の定義に関するものは G1.書式。',
     ].join('\n'),
     run(caseDir) {
       const r = spawnSync(process.execPath, [CHECKER, '--goals-dir', caseDir], { encoding: 'utf8' });
