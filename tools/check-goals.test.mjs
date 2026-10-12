@@ -376,6 +376,17 @@ test('G1.E4: 本文に「取り消し」という語があるだけでは、取�
   assert.match(v[0].message, /取り消し/);
 });
 
+// --- J45：判断待ちは1つの文書に5件まで（G1.E11） ---
+
+test('G1.E11: 判断待ちが5件までなら違反なし、6件なら違反', () => {
+  const pending = (n) =>
+    `## 判断待ち\n\n${Array.from({ length: n }, (_, i) => `### Q${i + 1} 問い\n\n- **推奨**：A\n- **自明な案**：B\n- 取り消し：可能\n`).join('\n')}\n`;
+  assert.deepEqual(checkGoal(parse(withPending(VALID, pending(5)))), []);
+  const v = checkGoal(parse(withPending(VALID, pending(6))));
+  assert.deepEqual(rules(v), ['G1.E11']);
+  assert.match(v[0].message, /6件/);
+});
+
 // --- J18：ゴールを達成・中止にするのは人。その判断は判例に残す ---
 
 test('G1.E10: 達成・中止のゴールに、それを決めた判例がなければ違反', () => {

@@ -10,6 +10,7 @@ const REQUIRED_KEYS = ['id', 'parent', 'status', 'version', 'updated'];
 const STATUSES = ['議論中', '進行中', '達成', '中止'];
 const DECIDED_BY_HUMAN = ['達成', '中止']; // この状態にするのは人の判断で、判例に残す（J18）
 const HUMAN_LINE_LIMIT = 40; // 判断待ちを除く（J17）
+const PENDING_LIMIT = 5; // 1つの文書の判断待ちの上限（J45）
 const PENDING_LABELS = ['推奨', '自明な案', '取り消し']; // 「- 推奨：」のような箇条書きの見出し語。太字は任意
 const JUDGMENT_COLUMNS = 5; // ID・日付・判断・上申・置き換え
 const JUDGMENT_FROM = /^(―|Q\d+(\s*、\s*Q\d+)*)$/;
@@ -186,6 +187,9 @@ export function checkGoal(goal) {
     ...(goal.hasBoundary ? [] : [['G1.E2', '境界の見出し「## AI 層」がありません']]),
     ...(lines > HUMAN_LINE_LIMIT
       ? [['G1.E3', `人間層が${lines}行あります（判断待ちを除いて${HUMAN_LINE_LIMIT}行まで）。ゴールの分割を検討してください`]]
+      : []),
+    ...(goal.pending.length > PENDING_LIMIT
+      ? [['G1.E11', `判断待ちが${goal.pending.length}件あります（${PENDING_LIMIT}件まで）。影響の大きいものから選び、残りは推奨で進めて事後通知にしてください`]]
       : []),
     ...goal.pending.flatMap((q) => {
       const missing = PENDING_LABELS.filter((label) => !hasLabel(q.lines, label));
