@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/tools/check-goals.mjs\" --hook",
+            "statusMessage": "ゴール文書の書式を検査中"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/tools/check-goals.mjs\" --stop",
+            "statusMessage": "ゴール文書の書式を検査中"
+          }
+        ]
+      }
+    ]
+  }
+}
