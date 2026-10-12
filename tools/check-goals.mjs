@@ -19,7 +19,7 @@ const OK = { code: 0, out: '', err: '' };
 
 const isHeading = (line, name) => new RegExp(`^## ${name}(（.*）)?\\s*$`).test(line);
 const hasLabel = (lines, label) =>
-  lines.some((line) => new RegExp(`^\\s*[-*]\\s*(\\*\\*)?${label}(\\*\\*)?\\s*[：:]`).test(line));
+  lines.some((line) => new RegExp(`^\\s*[-*]\\s*(\\*\\*)?${label}(\\*\\*)?：`).test(line)); // 揺れを許すのは太字だけ
 const qIds = (text) => [...(text ?? '').matchAll(/Q\d+/g)].map((m) => m[0]);
 
 function section(lines, name) {

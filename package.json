@@ -5,6 +5,7 @@
   "scripts": {
     "check": "node tools/check-goals.mjs",
     "eval": "node tools/eval-goals.mjs",
+    "eval:split": "node tools/eval-split.mjs",
     "test": "node --test --experimental-test-coverage --test-coverage-lines=80"
   },
   "engines": {

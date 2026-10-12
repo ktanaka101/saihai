@@ -75,7 +75,7 @@ ${specFiles.map((name) => `- spec/${name}`).join('\n')}
 
 // 使える道具そのものを読み書きの3つに絞る。--allowedTools と違い、利用者の設定の許可が引き継がれても
 // Bash は存在しない（G3.E6 で分かった穴）。ホーム以下（このリポジトリを含む）は読み書きを禁止する。
-export function evaluatorArgs(prompt) {
+export function evaluatorArgs(prompt, budgetUsd = BUDGET_USD) {
   return [
     '-p',
     prompt,
@@ -89,7 +89,7 @@ export function evaluatorArgs(prompt) {
     'Edit(~/**)',
     '--strict-mcp-config',
     '--max-budget-usd',
-    String(BUDGET_USD),
+    String(budgetUsd),
     '--max-turns',
     '80',
     '--output-format',
@@ -214,7 +214,7 @@ export function evaluate({ workDir, target }) {
 }
 
 // 作業記録は作業フォルダの外に置き、評価 AI からは読めないようにする。
-function launchClaude({ args, cwd, log }) {
+export function launchClaude({ args, cwd, log }) {
   const fd = openSync(log, 'w');
   try {
     const r = spawnSync('claude', args, { cwd, stdio: ['ignore', fd, fd] });
@@ -239,7 +239,7 @@ export function runEvaluation({ targetName, goalsDir = GOALS_DIR, workRoot = tmp
 }
 
 // 作業記録の最後の result 行から、評価 AI がどう終わったかを読む。
-function resultSubtype(log) {
+export function resultSubtype(log) {
   if (!existsSync(log)) return '';
   const results = readFileSync(log, 'utf8')
     .split('\n')

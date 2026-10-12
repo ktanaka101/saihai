@@ -362,6 +362,13 @@ test('G1.E4: 判断待ちの3つの項目は、箇条書きの見出し語とし
   assert.deepEqual(checkGoal(parse(withPending(VALID, plain))), []);
 });
 
+test('G1.E4: 見出し語の後ろは全角の「：」。半角の「:」は違反（G3.2 で2つの評価 AI が一致して指摘）', () => {
+  const halfwidth = PENDING_OK.replace('**推奨**：', '**推奨**: ');
+  const v = checkGoal(parse(withPending(VALID, halfwidth)));
+  assert.deepEqual(rules(v), ['G1.E4']);
+  assert.match(v[0].message, /推奨/);
+});
+
 test('G1.E4: 本文に「取り消し」という語があるだけでは、取り消しの可否とみなさない', () => {
   const loose = PENDING_OK.replace('- 取り消し：可能', '- 補足：取り消しは可');
   const v = checkGoal(parse(withPending(VALID, loose)));
