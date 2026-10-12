@@ -136,12 +136,18 @@ export function collectTranscriptMetrics(transcriptsDir, docAnswers = { recommen
   const questions = asks.reduce((n, a) => n + (a.input?.questions?.length ?? 0), 0);
   // 回答の選択肢に「（推奨）」が付いているかだけを数える。回答の中身は取らない（J48）
   // AskUserQuestion の結果だけを見る。ソースを読んだ結果などに同じ文字列が入っても数えない
-  const askIds = new Set(asks.map((a) => a.id).filter(Boolean));
+  // 推奨の印（（推奨））の付いた選択肢がない質問は、推奨どおりかを決められないので数えない（答えは質問の順に並ぶ）
+  const marked = new Map(asks.filter((a) => a.id).map((a) => [a.id, (a.input?.questions ?? []).map((q) => (q.options ?? []).some((o) => String(o.label ?? '').includes('（推奨）')))]));
   const answers = entries
     .filter((e) => e.type === 'user' && Array.isArray(e.message?.content))
     .flatMap((e) => e.message.content)
-    .filter((c) => c.type === 'tool_result' && askIds.has(c.tool_use_id) && typeof c.content === 'string' && c.content.includes('questions have been answered'))
-    .flatMap((c) => [...c.content.matchAll(/="([^"]*)"/g)].map((m) => m[1].includes('（推奨）')));
+    .filter((c) => c.type === 'tool_result' && marked.has(c.tool_use_id) && typeof c.content === 'string' && c.content.includes('questions have been answered'))
+    .flatMap((c) =>
+      [...c.content.matchAll(/="([^"]*)"/g)]
+        .map((m, i) => ({ recommended: m[1].includes('（推奨）'), counted: marked.get(c.tool_use_id)[i] ?? true }))
+        .filter((a) => a.counted)
+        .map((a) => a.recommended),
+    );
   return [
     metric('人の発言', String(human), human, source, ['G7.E3', 'G7.E4'], human),
     metric('人への質問', `${asks.length} 回（問い ${questions} 件）`, asks.length, source, ['G3.2.E5', 'G6.E5'], asks.length),
