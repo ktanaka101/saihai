@@ -92,7 +92,19 @@ test('作業記録からは、人の発言と人への質問の件数だけを�
     { type: 'user', turnOrigin: 'sdk', message: { content: '非対話セッションの指示' } },
     { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } },
     { type: 'user', isMeta: true, turnOrigin: 'human', message: { content: 'meta' } },
-    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'q', name: 'AskUserQuestion', input: { questions: [{}, {}, {}] } }] } },
+    {
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'q',
+            name: 'AskUserQuestion',
+            input: { questions: [{ options: [{ label: 'A にする（推奨）' }, { label: 'X' }] }, { options: [{ label: 'Y（推奨）' }, { label: 'B にする' }] }, { options: [{ label: 'Z（推奨）' }] }] },
+          },
+        ],
+      },
+    },
     // 観測のツールのソースを読んだ結果にも同じ文字列が入る。回答として数えない（G7 の観測の数え違い）
     { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'r', name: 'Read', input: {} }] } },
     { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'r', content: "c.content.includes('questions have been answered')\nmatchAll(/=\"([^\"]*)\"/g)" }] } },
@@ -125,6 +137,20 @@ test('推奨どおりの割合は、作業記録の回答と、ゴール文書�
   assert.equal(m.num, 2 / 3);
   assert.equal(m.count, 3);
   assert.match(m.source, /ゴール文書/);
+});
+
+test('推奨の印（（推奨））の付いた選択肢がない質問への回答は、推奨どおりかを決められないので数えない', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'saihai-observe-tx2-'));
+  const ask = (id, questions) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions } }] } });
+  const answer = (id, text) => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: `Your questions have been answered: ${text}. You can now continue.` }] } });
+  const lines = [
+    ask('a', [{ question: '問い1', options: [{ label: 'A（推奨）' }, { label: 'B' }] }, { question: '問い2', options: [{ label: 'C' }, { label: 'D' }] }]),
+    answer('a', '"問い1"="B", "問い2"="C"'),
+  ];
+  writeFileSync(join(dir, 's.jsonl'), `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
+  const m = metric(collectTranscriptMetrics(dir), '推奨どおりの割合');
+  assert.equal(m.count, 1);
+  assert.equal(m.num, 0);
 });
 
 test('作業記録がなければ、そのことを値に書く', () => {
