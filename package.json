@@ -4,6 +4,7 @@
   "description": "人は采配を振るだけ。調査・実装・評価・マージは AI が行うゴール工場",
   "scripts": {
     "check": "node tools/check-goals.mjs",
+    "eval": "node tools/eval-goals.mjs",
     "test": "node --test --experimental-test-coverage --test-coverage-lines=80"
   },
   "engines": {
