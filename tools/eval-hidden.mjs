@@ -147,7 +147,7 @@ export function runHidden({ targetName, storeDir = STORE_DIR }) {
     `隠しシナリオ ${ids.length} 件：通過 ${ids.length - failures.length} 件・失敗 ${failures.length} 件`,
     ...failures.map((f) => `- ${label(f)}`),
   ].join('\n');
-  return { code: failures.length ? 1 : 0, summary };
+  return { code: failures.length ? 1 : 0, summary, total: ids.length, failed: failures.length };
 }
 
 function listTranscripts(dir) {
