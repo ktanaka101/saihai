@@ -29,7 +29,7 @@ export function reviewReasons(d) {
 export function collectInboxItems({ goals, decisions, verdicts, command = 'saihai' }) {
   const confirmed = new Set(decisions.filter((d) => d.kind === '確認').flatMap((d) => d.targets ?? []));
   const open = (d) => !confirmed.has(d.id);
-  const confirm = (d) => `${command} log --goal ${d.goal} --kind 確認 --targets ${d.id}`;
+  const confirm = (d) => `${command} confirm ${d.id}`;
   const reports = decisions
     .filter((d) => d.kind === '報告' && open(d))
     .map((d) => ({ kind: '報告', goal: d.goal, id: d.id, title: d.decision, detail: `理由：${d.reason ?? ''}`, action: `答えたら：${confirm(d)}` }));
@@ -92,8 +92,9 @@ export function oldestProvisional(goals, n = 3) {
 
 const short = (text, n = 50) => (text.length > n ? `${text.slice(0, n)}…` : text);
 
-export function renderInbox({ items, stages, provisional, oldest = [], limit = LIMIT }) {
+export function renderInbox({ items, stages, provisional, oldest = [], limit = LIMIT, command = 'saihai' }) {
   const shown = items.slice(0, limit);
+  const reviews = shown.filter((i) => i.kind === '事後確認').map((i) => i.id);
   const rest = items.slice(limit);
   const restKinds = [...new Set(rest.map((i) => i.kind))].map((k) => `${k} ${rest.filter((i) => i.kind === k).length} 件`);
   const byStage = STAGES.map((s) => [s, stages.filter((x) => x.stage === s)]).filter(([, xs]) => xs.length > 0);
@@ -105,6 +106,7 @@ export function renderInbox({ items, stages, provisional, oldest = [], limit = L
     ...(shown.length
       ? shown.flatMap((i, n) => [`${n + 1}. [${i.kind}] ${i.goal} ${i.id === i.goal ? '' : `${i.id}：`}${i.title}`, `   ${i.detail}`, `   → ${i.action}`])
       : ['いま判断すべきことはありません。']),
+    ...(reviews.length > 1 ? ['', `見た事後確認をまとめて確認済みにする：${command} confirm ${reviews.join(' ')}`] : []),
     ...(rest.length ? ['', `ほかに ${rest.length} 件（${restKinds.join('・')}）`] : []),
     '',
     '## ゴールの段階',
@@ -126,7 +128,7 @@ export function inbox({ root = REPO_DIR, goalsDir = join(root, 'goals'), observe
     .filter(Boolean);
   const { verdicts } = observe({ goals, repoDir: root });
   const stages = goals.map((g) => ({ goal: g.frontmatter.id, title: titleOf(g), stage: stageOf(g, verdicts.find((v) => v.goal === g.frontmatter.id)) }));
-  return renderInbox({ items: collectInboxItems({ goals, decisions, verdicts, command }), stages, provisional: countProvisional(goals), oldest: oldestProvisional(goals) });
+  return renderInbox({ items: collectInboxItems({ goals, decisions, verdicts, command }), stages, provisional: countProvisional(goals), oldest: oldestProvisional(goals), command });
 }
 
 function realPath(path) {

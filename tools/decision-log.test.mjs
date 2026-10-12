@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run as runCheck } from './check-goals.mjs';
-import { appendDecision, checkDecisions, parseDecisions, run } from './decision-log.mjs';
+import { appendDecision, checkDecisions, confirmReviews, parseDecisions, run, runConfirm } from './decision-log.mjs';
 
 const GOAL = `---
 id: G9
@@ -137,4 +137,19 @@ test('ゴール文書の検査は、判断ログも検査する', () => {
   const out = runCheck({ goalsDir: r.goalsDir });
   assert.equal(out.code, 1);
   assert.match(out.err, /decisions\/log\.jsonl: \[G8\.E3\]/);
+});
+
+test('confirmReviews: 見た判断をまとめて確認済みにする。確認はゴールの根（G0 にあたるもの）に記録する（受信箱の人の手間を1回にする）', () => {
+  const r = repo([judgment('D1', { relation: '指摘' }), judgment('D2', { relation: '逸脱' })]);
+  const saved = confirmReviews({ ...r, ids: ['D1', 'D2'], today: '2026-10-13' });
+  assert.deepEqual([saved.id, saved.goal, saved.kind, saved.targets], ['D3', 'G9', '確認', ['D1', 'D2']]);
+  assert.throws(() => confirmReviews({ ...r, ids: ['D99'] }), /D99/);
+});
+
+test('runConfirm: 引数の D を確認済みにし、何を記録したかを返す', () => {
+  const r = repo([judgment('D1', { relation: '指摘' })]);
+  const ok = runConfirm({ argv: ['D1'], goalsDir: r.goalsDir });
+  assert.equal(ok.code, 0, ok.err);
+  assert.match(ok.out, /D1 を確認済みにしました（D2）/);
+  assert.match(runConfirm({ argv: [], goalsDir: r.goalsDir }).err, /使い方/);
 });

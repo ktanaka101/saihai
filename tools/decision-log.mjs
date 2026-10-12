@@ -122,6 +122,32 @@ export function run({ argv = [], goalsDir = join(REPO_DIR, 'goals'), decisionsPa
   }
 }
 
+// 受信箱の事後確認を見たら、まとめて確認済みにする（人の手間を1回にする）。確認はゴールの根（parent が null）に記録する
+function rootGoalId(goalsDir) {
+  for (const name of readdirSync(goalsDir).filter((n) => n.endsWith('.md'))) {
+    const text = readFileSync(join(goalsDir, name), 'utf8');
+    if (/^parent:\s*null\s*$/m.test(text)) return text.match(/^id:\s*(\S+)\s*$/m)?.[1];
+  }
+  return undefined;
+}
+
+export function confirmReviews({ goalsDir, decisionsPath = decisionsPathOf(goalsDir), ids, today }) {
+  const goal = rootGoalId(goalsDir);
+  if (!goal) throw new Error('ゴールの根（parent: null のゴール文書）が見つかりません');
+  return appendDecision({ goalsDir, decisionsPath, entry: { goal, kind: '確認', targets: ids }, ...(today ? { today } : {}) });
+}
+
+export function runConfirm({ argv = [], goalsDir = join(REPO_DIR, 'goals') } = {}) {
+  const ids = argv.flatMap((a) => a.split(',')).map((a) => a.trim()).filter(Boolean);
+  if (ids.length === 0) return { code: 1, out: '', err: '使い方：saihai confirm D3 D6（受信箱の事後確認を見たら、まとめて確認済みにする）\n' };
+  try {
+    const saved = confirmReviews({ goalsDir, ids });
+    return { code: 0, out: `${ids.join('・')} を確認済みにしました（${saved.id}）\n`, err: '' };
+  } catch (error) {
+    return { code: 1, out: '', err: `${error.message}\n` };
+  }
+}
+
 function realPath(path) {
   try {
     return realpathSync(path);

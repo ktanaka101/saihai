@@ -8,7 +8,7 @@ import { run as aar } from '../tools/aar.mjs';
 import { run as answer } from '../tools/answer.mjs';
 import { run as brief } from '../tools/brief.mjs';
 import { run as check } from '../tools/check-goals.mjs';
-import { run as log } from '../tools/decision-log.mjs';
+import { run as log, runConfirm as confirm } from '../tools/decision-log.mjs';
 import { run as gate } from '../tools/gate.mjs';
 import { guard } from '../tools/guard-main.mjs';
 import { run as inbox } from '../tools/inbox.mjs';
@@ -26,6 +26,7 @@ const USAGE = `使い方：saihai <サブコマンド> [--root <フォルダ>]
   log       判断ログに1件足す（--goal G1 --kind 判断 ...）
   inbox     受信箱：いま人が判断すべきこと
   answer    判断待ちに答える（saihai answer Q12 推奨 / 自明な案 / --text "…"）
+  confirm   受信箱の事後確認を見たら、確認済みにする（saihai confirm D3 D6）
   observe   観測と仮説の判定（--save で履歴に残す、--record 指標=値 で記録する）
   aar       事後検証の材料（saihai aar G1）
   gate      門番：main とマージした結果を検査し、通れば main に反映する
@@ -41,6 +42,7 @@ const NEEDS_ROOT = {
   log: (root, argv) => log({ argv, goalsDir: join(root, 'goals') }),
   inbox: (root) => inbox({ root }),
   answer: (root, argv) => answer({ argv, goalsDir: join(root, 'goals') }),
+  confirm: (root, argv) => confirm({ argv, goalsDir: join(root, 'goals') }),
   observe: (root, argv) => observe({ argv, root }),
   aar: (root, argv) => aar({ argv, root }),
   gate: (root) => gate({ root }),
