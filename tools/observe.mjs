@@ -69,7 +69,11 @@ function listJsonl(dir) {
 export function collectTranscriptMetrics(transcriptsDir) {
   const source = '作業記録（件数のみ）';
   if (!existsSync(transcriptsDir)) {
-    return [metric('人の発言', '作業記録なし', 0, source, ['G7.E3', 'G7.E4']), metric('人への質問', '作業記録なし', 0, source, ['G3.2.E5', 'G6.E5'])];
+    return [
+      metric('人の発言', '作業記録なし', 0, source, ['G7.E3', 'G7.E4']),
+      metric('人への質問', '作業記録なし', 0, source, ['G3.2.E5', 'G6.E5']),
+      metric('推奨どおりの回答', '作業記録なし', 0, source, ['G2.E1', 'G6.E5']),
+    ];
   }
   const entries = listJsonl(transcriptsDir).flatMap((file) =>
     readFileSync(file, 'utf8')
@@ -89,9 +93,16 @@ export function collectTranscriptMetrics(transcriptsDir) {
     .flatMap((e) => (Array.isArray(e.message?.content) ? e.message.content : []))
     .filter((c) => c.type === 'tool_use' && c.name === 'AskUserQuestion');
   const questions = asks.reduce((n, a) => n + (a.input?.questions?.length ?? 0), 0);
+  // 回答の選択肢に「（推奨）」が付いているかだけを数える。回答の中身は取らない（J48）
+  const answers = entries
+    .filter((e) => e.type === 'user' && Array.isArray(e.message?.content))
+    .flatMap((e) => e.message.content)
+    .filter((c) => c.type === 'tool_result' && typeof c.content === 'string' && c.content.includes('questions have been answered'))
+    .flatMap((c) => [...c.content.matchAll(/="([^"]*)"/g)].map((m) => m[1].includes('（推奨）')));
   return [
     metric('人の発言', String(human), human, source, ['G7.E3', 'G7.E4']),
     metric('人への質問', `${asks.length} 回（問い ${questions} 件）`, asks.length, source, ['G3.2.E5', 'G6.E5']),
+    metric('推奨どおりの回答', `${answers.length} 件中 ${answers.filter(Boolean).length} 件`, answers.length, source, ['G2.E1', 'G6.E5']),
   ];
 }
 
@@ -128,11 +139,13 @@ export function renderReport(metrics, now = new Date()) {
   return [
     `# saihai の観測（${now.toISOString().slice(0, 16).replace('T', ' ')} UTC）`,
     '',
-    '| 指標 | 値 | 件数 | 出どころ | 具体例 |',
-    '|---|---|---|---|---|',
-    ...metrics.map((m) => `| ${m.name} | ${m.value} | ${m.count} | ${m.source} | ${m.examples.join('・')} |`),
+    '| 指標 | 値 | 件数 | 出どころ | 具体例 | 判断に使えるか |',
+    '|---|---|---|---|---|---|',
+    ...metrics.map(
+      (m) => `| ${m.name} | ${m.value} | ${m.count} | ${m.source} | ${m.examples.join('・')} | ${m.count >= TOO_FEW ? '使える' : 'まだ判断できない'} |`,
+    ),
     '',
-    `件数が${TOO_FEW}件未満の指標は、解釈（G6）では「まだ判断できない」として扱う（J51）。`,
+    `件数が${TOO_FEW}件未満の指標は「まだ判断できない」とし、解釈（G6）の候補にしない（J51）。`,
     '',
   ].join('\n');
 }
