@@ -347,6 +347,27 @@ test('上申列の Q は「、」か「,」で区切って複数書ける', () =
   }
 });
 
+// --- J18：ゴールを達成・中止にするのは人。その判断は判例に残す ---
+
+test('G1.E10: 達成・中止のゴールに、それを決めた判例がなければ違反', () => {
+  for (const status of ['達成', '中止']) {
+    const v = checkGoal(parse(VALID.replace('status: 進行中', `status: ${status}`)));
+    assert.deepEqual(rules(v), ['G1.E10'], status);
+  }
+});
+
+test('G1.E10: 達成・中止を決めた判例があれば違反なし', () => {
+  for (const status of ['達成', '中止']) {
+    const text = withJudgment(VALID.replace('status: 進行中', `status: ${status}`), `| J1 | 2026-10-12 | G9 を${status}とする | Q3 | ― |`);
+    assert.deepEqual(checkGoal(parse(text)), [], status);
+  }
+});
+
+test('G1.E10: 別の状態を決めた判例では足りない', () => {
+  const text = withJudgment(VALID.replace('status: 進行中', 'status: 達成'), '| J1 | 2026-10-12 | G9 を中止とする | Q3 | ― |');
+  assert.deepEqual(rules(checkGoal(parse(text))), ['G1.E10']);
+});
+
 test('CLI: シンボリックリンク経由で起動しても検査が実際に走る', () => {
   const root = fileURLToPath(new URL('..', import.meta.url));
   const link = join(mkdtempSync(join(tmpdir(), 'saihai-cli-')), 'repo');

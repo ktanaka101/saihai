@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const GOALS_DIR = fileURLToPath(new URL('../goals/', import.meta.url));
 const REQUIRED_KEYS = ['id', 'parent', 'status', 'updated'];
 const STATUSES = ['議論中', '進行中', '達成', '中止'];
+const DECIDED_BY_HUMAN = ['達成', '中止']; // この状態にするのは人の判断で、判例に残す（J18）
 const HUMAN_LINE_LIMIT = 40; // 判断待ちを除く（J17）
 const PENDING_KEYS = ['**推奨**', '**自明な案**', '取り消し'];
 const JUDGMENT_COLUMNS = 5; // ID・日付・判断・上申・置き換え
@@ -168,9 +169,17 @@ function formatViolations(goal) {
   ];
 }
 
+function closedWithoutJudgment(goal) {
+  const status = goal.frontmatter?.status;
+  if (!DECIDED_BY_HUMAN.includes(status)) return [];
+  if (goal.judgments.some((j) => (j.cells[2] ?? '').includes(status))) return [];
+  return [`status を「${status}」にするのは人の判断です（J18）。それを決めた判例をこのゴールに記録してください`];
+}
+
 export function checkGoal(goal) {
   const lines = countHumanLines(goal.human);
   const found = [
+    ...closedWithoutJudgment(goal).map((message) => ['G1.E10', message]),
     ...frontmatterViolations(goal).map((message) => ['G1.E1', message]),
     ...(goal.hasBoundary ? [] : [['G1.E2', '境界の見出し「## AI 層」がありません']]),
     ...(lines > HUMAN_LINE_LIMIT
