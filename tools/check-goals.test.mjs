@@ -465,6 +465,57 @@ test('G1.2.E3: 不変条件・推奨・仮置きの各項目に理由がなけ�
   }
 });
 
+test('G1.2.E2: 仮説を立てないときは、理由が要る（「仮説：なし（理由：…）」）', () => {
+  const withHypothesis = (line) => VALID.replace(HYPO, line);
+  for (const bad of ['- 仮説：なし', '- 仮説：なし（理由：）', '- 仮説：なし（理由： ）', '- 仮説：なし。手段なので']) {
+    assert.deepEqual(rules(checkGoal(parse(withHypothesis(bad)))), ['G1.2.E2'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withHypothesis('- 仮説：なし（理由：G3 の手段）'))), []);
+  assert.deepEqual(checkGoal(parse(withHypothesis('- 仮説：なし(理由：G3 の手段)'))), []);
+});
+
+test('G1.2.E3: 「理由：」のあとに本文がなければ、理由がないのと同じく違反', () => {
+  for (const bad of ['- 守る — 理由：', '- 守る — 理由： ', '- 守る — 理由：。']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 推奨\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+});
+
+test('G1.2.E3: 「-」以外の箇条（「*」・番号）で書いた項目も、理由がなければ違反', () => {
+  for (const bad of ['* 守る', '1. 守る']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 不変条件\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 不変条件\n\n* 守る — 理由：G0 のため'))), []);
+});
+
+test('G1.2.E3: 「理由：なし」は理由がないのと同じく違反', () => {
+  for (const bad of ['- 守る — 理由：なし', '- 守る — 理由：なし。']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 仮置き\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 仮置き\n\n- 守る — 理由：なしでは困るから（G0）'))), []);
+});
+
+test('G1.2.E3: 古い「## 制約」の節は、AI 層にあっても違反', () => {
+  assert.deepEqual(rules(checkGoal(parse(`${VALID}\n## 制約\n\n- 守る — 理由：G0 のため\n`))), ['G1.2.E3']);
+});
+
+test('G1.2.E3: 理由は「— 理由：」の形で書く。括弧書きや句点の後ろの「理由：」は違反（G3.4 の裁定で h070）', () => {
+  for (const bad of ['- 守る（理由：G0 のため）', '- 守る。理由：G0 のため', '- 守る - 理由：G0 のため']) {
+    assert.deepEqual(rules(checkGoal(parse(withSection(VALID, `## 仮置き\n\n${bad}`)))), ['G1.2.E3'], bad);
+  }
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 仮置き\n\n- 守る —理由：G0 のため'))), []);
+});
+
+test('G1.2.E2: 「なし」で始まるだけの普通の仮説は、「仮説：なし」と取り違えない', () => {
+  const doc = VALID.replace(HYPO, '- 仮説：なしで済ませていた確認を自動化すると、見落としが減る\n- 当たりの判定：減る\n- 外れの判定：減らない');
+  assert.deepEqual(checkGoal(parse(doc)), []);
+  // 普通の仮説なので、当たりと外れの判定がそれぞれ要る
+  assert.deepEqual(rules(checkGoal(parse(VALID.replace(HYPO, '- 仮説：なしで済ませていた確認を自動化する')))), ['G1.2.E2', 'G1.2.E2']);
+});
+
+test('G1.2.E3: 制約の節の水平線（* * * など）は項目とみなさない', () => {
+  assert.deepEqual(checkGoal(parse(withSection(VALID, '## 推奨\n\n- 守る — 理由：G0 のため\n\n* * *'))), []);
+});
+
 test('G1.2.E3: 古い「## 制約」の節は違反', () => {
   assert.deepEqual(rules(checkGoal(parse(withSection(VALID, '## 制約\n\n- 守る — 理由：G0 のため')))), ['G1.2.E3']);
 });

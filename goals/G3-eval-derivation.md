@@ -99,7 +99,8 @@ updated: 2026-10-12
 
 - G3.1 評価 AI の起動と入出力（`goals/G3.1-evaluator-launch.md`、達成）
 - G3.2 解釈の割れの検出と、人への質問（`goals/G3.2-split-detection.md`、達成）
-- G3.3 隠しシナリオの保管と隔離（`goals/G3.3-hidden-scenarios.md`）
+- G3.3 隠しシナリオの保管と隔離（`goals/G3.3-hidden-scenarios.md`、達成）
+- G3.4 隠しシナリオの裁定（`goals/G3.4-hidden-appeal.md`、達成。落ちた隠しシナリオを、実装を見ない裁定役が仕様だけから決着させる）
 
 ### 参考
 

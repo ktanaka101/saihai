@@ -29,6 +29,13 @@ const hasLabel = (lines, label) =>
   lines.some((line) => new RegExp(`^\\s*[-*]\\s*(\\*\\*)?${label}(\\*\\*)?：`).test(line)); // 揺れを許すのは太字だけ
 const qIds = (text) => [...(text ?? '').matchAll(/Q\d+/g)].map((m) => m[0]);
 
+// 「仮説：なし」（立てない）か。「なしで済ませていた…」のような普通の仮説と取り違えない
+export const isNoHypothesis = (line) => /^- 仮説：なし\s*([（(。、.]|$)/.test(line);
+// 箇条の項目（-・*・番号）。水平線（* * * など）は項目ではない
+const ITEM = /^([-*]|\d+\.)\s/;
+const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+export const listItems = (lines) => (lines ?? []).filter((l) => ITEM.test(l) && !RULE.test(l));
+
 export function section(lines, name) {
   const start = lines.findIndex((line) => isHeading(line, name));
   if (start === -1) return null;
@@ -120,6 +127,7 @@ export function parseGoal(path, text) {
     frontmatter,
     hasBoundary: boundary !== -1,
     human,
+    ai,
     pendingSections: { human: countPending(human), ai: countPending(ai) },
     pendingItems: items,
     pendingStray: stray,
@@ -194,23 +202,36 @@ function intentViolations(goal) {
   return INTENT_LABELS.filter((label) => !lines.some((l) => l.startsWith(`- ${label}：`))).map((label) => `意図に「- ${label}：」がありません`);
 }
 
+// 「理由：」のあとに本文があるか。空白と句読点だけなら理由がないのと同じ
+const hasReasonBody = (text) => !['', 'なし', '無し'].includes(text.replace(/[\s。、．.,）)]/g, ''));
+// 制約の理由は「— 理由：」の形で書く（G1.2 の設計の表。G3.4 の裁定で確かめた）
+const REASON_MARK = /—\s*理由：/;
+const reasonAfter = (line) => {
+  const m = line.match(REASON_MARK);
+  return m ? line.slice(m.index + m[0].length) : null;
+};
+
 function hypothesisViolations(goal) {
   const lines = section(goal.human, '仮説と判定');
   if (!lines) return ['「## 仮説と判定」がありません。仮説を立てないゴールは「- 仮説：なし（理由：…）」と書いてください'];
   const hypothesis = lines.find((l) => l.startsWith('- 仮説：'));
   if (!hypothesis) return ['仮説と判定に「- 仮説：」がありません'];
-  if (hypothesis.startsWith('- 仮説：なし')) return [];
+  if (isNoHypothesis(hypothesis)) {
+    const reason = hypothesis.match(/^- 仮説：なし\s*[（(]理由：(.*)[）)]/)?.[1];
+    return reason !== undefined && hasReasonBody(reason) ? [] : ['仮説を立てないときは「- 仮説：なし（理由：…）」と理由を書いてください'];
+  }
   return ['当たりの判定', '外れの判定'].filter((label) => !lines.some((l) => l.startsWith(`- ${label}：`))).map((label) => `仮説と判定に「- ${label}：」がありません`);
 }
 
 const constraintItems = (goal) =>
-  STRENGTHS.flatMap((name) => (section(goal.human, name) ?? []).filter((l) => l.startsWith('- ')).map((line) => ({ name, line })));
+  STRENGTHS.flatMap((name) => listItems(section(goal.human, name)).map((line) => ({ name, line: line.replace(ITEM, '- ') })));
 
 function constraintViolations(goal) {
   return [
-    ...(section(goal.human, '制約') ? ['「## 制約」は「## 不変条件」「## 推奨」「## 仮置き」に分けてください（J58）'] : []),
+    // 古い節は、人間層でも AI 層でも違反（G1.2.E3 は人間層に限っていない）
+    ...(section(goal.human, '制約') || section(goal.ai, '制約') ? ['「## 制約」は「## 不変条件」「## 推奨」「## 仮置き」に分けてください（J58）'] : []),
     ...constraintItems(goal)
-      .filter(({ line }) => !line.includes('理由：'))
+      .filter(({ line }) => reasonAfter(line) === null || !hasReasonBody(reasonAfter(line)))
       .map(({ name, line }) => `${name}の「${line.slice(2, 40)}」に理由（— 理由：…）がありません`),
   ];
 }
@@ -236,7 +257,7 @@ function expressionViolations(goal) {
 // 警告（違反ではない）：理由がどのゴール・具体例・判例・判断ログの ID にも触れていない制約（委任型の指示の原則4）
 export function warnGoal(goal) {
   return constraintItems(goal)
-    .filter(({ line }) => line.includes('理由：') && !ID_REFERENCE.test(line.slice(line.indexOf('理由：'))))
+    .filter(({ line }) => reasonAfter(line) !== null && !ID_REFERENCE.test(reasonAfter(line)))
     .map(({ name, line }) => ({
       path: goal.path,
       rule: 'G1.2.警告',

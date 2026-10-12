@@ -12,6 +12,8 @@
     "observe": "node tools/observe.mjs",
     "brief": "node tools/brief.mjs",
     "log": "node tools/decision-log.mjs",
+    "inbox": "node tools/inbox.mjs",
+    "aar": "node tools/aar.mjs",
     "test": "node --test --experimental-test-coverage --test-coverage-lines=80"
   },
   "engines": {
