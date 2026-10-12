@@ -135,10 +135,12 @@ export function collectTranscriptMetrics(transcriptsDir, docAnswers = { recommen
     .filter((c) => c.type === 'tool_use' && c.name === 'AskUserQuestion');
   const questions = asks.reduce((n, a) => n + (a.input?.questions?.length ?? 0), 0);
   // 回答の選択肢に「（推奨）」が付いているかだけを数える。回答の中身は取らない（J48）
+  // AskUserQuestion の結果だけを見る。ソースを読んだ結果などに同じ文字列が入っても数えない
+  const askIds = new Set(asks.map((a) => a.id).filter(Boolean));
   const answers = entries
     .filter((e) => e.type === 'user' && Array.isArray(e.message?.content))
     .flatMap((e) => e.message.content)
-    .filter((c) => c.type === 'tool_result' && typeof c.content === 'string' && c.content.includes('questions have been answered'))
+    .filter((c) => c.type === 'tool_result' && askIds.has(c.tool_use_id) && typeof c.content === 'string' && c.content.includes('questions have been answered'))
     .flatMap((c) => [...c.content.matchAll(/="([^"]*)"/g)].map((m) => m[1].includes('（推奨）')));
   return [
     metric('人の発言', String(human), human, source, ['G7.E3', 'G7.E4'], human),
