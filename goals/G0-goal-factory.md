@@ -163,7 +163,7 @@ updated: 2026-10-12
 - G2 参謀：情報収集、プレモーテム、上申の整形
 - G3 評価の導出（`goals/G3-eval-derivation.md`、達成）
 - G4 実装ループとエスカレーションの判定
-- G5 マージの門番（`goals/G5-merge-gate.md`）
+- G5 マージの門番（`goals/G5-merge-gate.md`、達成）
 - G6 判例の記録と適用
 - G7 注意力の計測
 
