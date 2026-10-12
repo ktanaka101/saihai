@@ -5,6 +5,7 @@ import { readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { localDate } from './date.mjs';
 
 const GOALS_DIR = fileURLToPath(new URL('../goals/', import.meta.url));
 const ID = /^G\d+(\.\d+)*$/;
@@ -101,7 +102,7 @@ updated: ${date}
 `;
 }
 
-export function createGoal({ goalsDir = GOALS_DIR, id, parent, slug, title, summary, date = new Date().toISOString().slice(0, 10) }) {
+export function createGoal({ goalsDir = GOALS_DIR, id, parent, slug, title, summary, date = localDate() }) {
   if (!ID.test(id)) throw new Error(`ID「${id}」は G{番号} の形にしてください`);
   if (!SLUG.test(slug)) throw new Error(`名前「${slug}」は英小文字・数字・ハイフンにしてください`);
   const ids = existingIds(goalsDir);

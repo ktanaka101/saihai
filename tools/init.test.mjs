@@ -26,12 +26,12 @@ test('initProject: 空のプロジェクトに G0・判断ログ・設定・CLAU
   assert.match(read(root, `goals/${g0}`), /^id: G0$/m);
   assert.match(read(root, `goals/${g0}`), /^parent: null$/m);
   assert.ok(existsSync(join(root, 'decisions', 'log.jsonl')));
-  assert.deepEqual(JSON.parse(read(root, 'saihai.config.json')), { command: CMD, gate: { checks: [] }, probes: {} });
+  assert.deepEqual(JSON.parse(read(root, 'saihai.config.json')), { command: CMD, guard: true, gate: { checks: [] }, probes: {} });
   assert.ok(existsSync(join(root, 'observations', 'log.jsonl')));
   assert.match(read(root, 'CLAUDE.md'), /<!-- saihai:start/);
   assert.match(read(root, 'CLAUDE.md'), /node "\/opt\/saihai\/bin\/saihai\.mjs" brief/);
   assert.doesNotMatch(read(root, 'CLAUDE.md'), /\{\{saihai\}\}/);
-  for (const skill of ['goal-draft', 'interpret']) assert.match(read(root, `.claude/skills/${skill}/SKILL.md`), new RegExp(`name: ${skill}`));
+  for (const skill of ['goal-draft', 'interpret', 'inbox']) assert.match(read(root, `.claude/skills/${skill}/SKILL.md`), new RegExp(`name: ${skill}`));
   const commands = hookCommands(settingsOf(root));
   assert.ok(commands.some((c) => c.includes(`${CMD} check --hook`)));
   assert.ok(commands.some((c) => c.includes(`${CMD} check --stop`)));
@@ -86,8 +86,10 @@ test('mergeSettings: 元のオブジェクトを変えずに新しいオブジ�
 test('saihai 自身のスキルと CLAUDE.md の節は、init が入れるものと同じ雛形から作られている（G9.E5）', () => {
   const repo = fileURLToPath(new URL('..', import.meta.url));
   const rendered = (path) => renderTemplate(readFileSync(join(TEMPLATES_DIR, path), 'utf8'), SELF_COMMAND);
-  for (const skill of ['goal-draft', 'interpret']) {
+  for (const skill of ['goal-draft', 'interpret', 'inbox']) {
     assert.equal(read(repo, `.claude/skills/${skill}/SKILL.md`), rendered(`skills/${skill}/SKILL.md`), `${skill} が雛形とずれています`);
+    // プラグインのスキル（G10）は、短い呼び方（saihai）で同じ雛形から作る
+    assert.equal(read(repo, `skills/${skill}/SKILL.md`), renderTemplate(readFileSync(join(TEMPLATES_DIR, 'skills', skill, 'SKILL.md'), 'utf8'), 'saihai'), `プラグインの ${skill} が雛形とずれています`);
   }
   assert.ok(read(repo, 'CLAUDE.md').includes(rendered('CLAUDE.md')), 'CLAUDE.md の saihai の節が雛形とずれています');
 });

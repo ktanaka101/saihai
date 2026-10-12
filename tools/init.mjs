@@ -6,10 +6,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { goalTemplate } from './new-goal.mjs';
+import { localDate } from './date.mjs';
 
 export const TEMPLATES_DIR = fileURLToPath(new URL('../templates/', import.meta.url));
 export const SAIHAI_BIN = fileURLToPath(new URL('../bin/saihai.mjs', import.meta.url));
-const SKILLS = ['goal-draft', 'interpret'];
+export const SKILLS = ['goal-draft', 'interpret', 'inbox'];
 export const SELF_COMMAND = 'node bin/saihai.mjs'; // saihai 自身からの呼び方（G9.E5）
 const START = '<!-- saihai:start';
 const END = '<!-- saihai:end -->';
@@ -91,7 +92,7 @@ const readJson = (path, label) => {
 };
 
 // 書く前に確かめ、書く内容をすべて決める
-function plan({ root, command, templatesDir, date, force }) {
+function plan({ root, command, templatesDir, date, force, minimal }) {
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error(`導入先のフォルダ ${root} がありません`);
   const rel = (path) => join(root, path);
   const writes = [];
@@ -119,9 +120,14 @@ function plan({ root, command, templatesDir, date, force }) {
   // 設定：saihai が持つ command だけを今の呼び方にする（ほかの項目はそのまま）
   const config = readJson(rel('saihai.config.json'), 'saihai.config.json');
   const oldCommand = config?.command;
-  if (!config) writes.push({ path: 'saihai.config.json', content: `${JSON.stringify({ command, gate: { checks: [] }, probes: {} }, null, 2)}\n`, note: '作りました' });
+  // 全部入りの init はフックも入れるので guard を有効にする。--minimal（プラグインから使う）は有効にしない（J85）
+  const fresh = minimal ? { command, gate: { checks: [] }, probes: {} } : { command, guard: true, gate: { checks: [] }, probes: {} };
+  if (!config) writes.push({ path: 'saihai.config.json', content: `${JSON.stringify(fresh, null, 2)}\n`, note: '作りました' });
   else if (oldCommand !== command) writes.push({ path: 'saihai.config.json', content: `${JSON.stringify({ ...config, command }, null, 2)}\n`, note: `呼び方を ${command} にしました（ほかの項目はそのまま）` });
   else report.push('- saihai.config.json：変更なし');
+
+  // --minimal：ゴール文書・判断ログ・設定だけ。CLAUDE.md・スキル・フックはプラグインが受け持つ（G10.E5）
+  if (minimal) return { writes, report };
 
   // CLAUDE.md：印の間だけ
   const before = existsSync(rel('CLAUDE.md')) ? readFileSync(rel('CLAUDE.md'), 'utf8') : '';
@@ -151,8 +157,8 @@ function plan({ root, command, templatesDir, date, force }) {
   return { writes, report };
 }
 
-export function initProject({ root, command = saihaiCommand(), templatesDir = TEMPLATES_DIR, date = new Date().toISOString().slice(0, 10), force = false }) {
-  const { writes, report } = plan({ root, command, templatesDir, date, force });
+export function initProject({ root, command = saihaiCommand(), templatesDir = TEMPLATES_DIR, date = localDate(), force = false, minimal = false }) {
+  const { writes, report } = plan({ root, command, templatesDir, date, force, minimal });
   for (const w of writes) {
     mkdirSync(dirname(join(root, w.path)), { recursive: true });
     writeFileSync(join(root, w.path), w.content);

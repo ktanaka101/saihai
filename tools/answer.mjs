@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { checkRepo, loadGoals, parseGoal } from './check-goals.mjs';
+import { localDate } from './date.mjs';
 
 const USAGE = '使い方：saihai answer <Q の ID> 推奨|自明な案 [--text "自由記述"] [--strength 推奨|仮置き|不変条件] [--adopt J37] [--asked]';
 const TABLE_HEADER = ['| ID | 日付 | 判断 | 強さ | 上申 | 置き換え |', '|---|---|---|---|---|---|'];
@@ -54,7 +55,7 @@ const labelText = (lines, label) => {
   return m ? m[3].trim() : null;
 };
 
-export function answerQuestion({ goalsDir, id, choice, text, strength, adopt, asked = false, date = new Date().toISOString().slice(0, 10) }) {
+export function answerQuestion({ goalsDir, id, choice, text, strength, adopt, asked = false, date = localDate() }) {
   const goals = loadGoals(goalsDir);
   const goal = goals.find((g) => g.pending.some((q) => q.id === id));
   if (!goal) throw new Error(`判断待ち ${id} が見つかりません（もう答えたか、ID が違います）`);

@@ -1,0 +1,3 @@
+#!/bin/sh
+# プラグインの bin/ は Claude Code のセッションの PATH に入る。saihai と短く呼ぶための入口（G10）
+exec node "$(dirname "$0")/saihai.mjs" "$@"

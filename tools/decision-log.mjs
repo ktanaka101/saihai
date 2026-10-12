@@ -5,6 +5,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realp
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { localDate } from './date.mjs';
 
 const REPO_DIR = fileURLToPath(new URL('..', import.meta.url));
 const KINDS = ['判断', 'バックブリーフ', '報告', '確認'];
@@ -81,7 +82,7 @@ const goalIdsIn = (goalsDir) =>
     .filter(Boolean);
 
 // 通し番号と今日の日付を付けて1件足す。項目が足りなければ書かずに失敗する（G8.E4）
-export function appendDecision({ goalsDir = join(REPO_DIR, 'goals'), decisionsPath = decisionsPathOf(goalsDir), entry, today = new Date().toISOString().slice(0, 10) }) {
+export function appendDecision({ goalsDir = join(REPO_DIR, 'goals'), decisionsPath = decisionsPathOf(goalsDir), entry, today = localDate() }) {
   const existing = existsSync(decisionsPath) ? parseDecisions(readFileSync(decisionsPath, 'utf8')) : [];
   const numbers = existing.map((p) => Number(p.value?.id?.match(/^D(\d+)$/)?.[1] ?? 0));
   const full = { ...entry, id: `D${Math.max(0, ...numbers) + 1}`, date: today };
