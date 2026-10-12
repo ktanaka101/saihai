@@ -59,11 +59,24 @@ test('作業記録からは、人の発言と人への質問の件数だけを�
     { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } },
     { type: 'user', isMeta: true, turnOrigin: 'human', message: { content: 'meta' } },
     { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{}, {}, {}] } }] } },
+    {
+      type: 'user',
+      message: {
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'q',
+            content: 'Your questions have been answered: "Q1 秘密の問い？"="A にする（推奨）", "Q2 問い"="B にする", "Q3 問い"="自由に書いた秘密の答え". You can now continue.',
+          },
+        ],
+      },
+    },
   ];
   writeFileSync(join(dir, 's.jsonl'), `${lines.map((l) => JSON.stringify(l)).join('\n')}\nnot json\n`);
   const metrics = collectTranscriptMetrics(dir);
   assert.equal(metric(metrics, '人の発言').value, '2');
   assert.equal(metric(metrics, '人への質問').value, '1 回（問い 3 件）');
+  assert.equal(metric(metrics, '推奨どおりの回答').value, '3 件中 1 件');
   assert.doesNotMatch(JSON.stringify(metrics), /秘密/);
 });
 
@@ -103,4 +116,13 @@ test('報告のどの数値にも、出どころと関わる具体例の ID が�
   assert.ok(report.trim().split('\n').length <= 20, report);
   assert.match(report, /隠しシナリオ.*23 件中 23 件が通過/);
   assert.match(report, /まだ観測できない/);
+});
+
+test('件数が5件未満の指標は「まだ判断できない」と、決まった手順で判定する（G6.E3・J51）', () => {
+  const report = renderReport([
+    { name: '少ない', value: '4 回', count: 4, source: 'x', examples: ['G0.E1'] },
+    { name: '足りる', value: '5 回', count: 5, source: 'x', examples: ['G0.E1'] },
+  ]);
+  assert.match(report, /\| 少ない \|.*\| まだ判断できない \|/);
+  assert.match(report, /\| 足りる \|.*\| 使える \|/);
 });
