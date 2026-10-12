@@ -54,21 +54,27 @@ function realPath(path) {
   }
 }
 
-if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const id = process.argv[2];
+export function run({ argv = [], root = REPO_DIR } = {}) {
+  const id = argv[0];
   try {
-    if (!id) throw new Error('使い方：npm run aar -- <ゴールの ID>');
-    const goalsDir = join(REPO_DIR, 'goals');
+    if (!id) throw new Error('使い方：saihai aar <ゴールの ID>');
+    const goalsDir = join(root, 'goals');
     const goals = loadGoals(goalsDir);
     const goal = goals.find((g) => g.frontmatter?.id === id);
     if (!goal) throw new Error(`ゴール ${id} が見つかりません`);
     const decisions = loadDecisions(goalsDir)
       .map((p) => p.value)
       .filter(Boolean);
-    const { verdicts } = observeAll({ goals });
-    process.stdout.write(buildAAR({ goal, verdict: verdicts.find((v) => v.goal === id), decisions }));
+    const { verdicts } = observeAll({ goals, repoDir: root });
+    return { code: 0, out: buildAAR({ goal, verdict: verdicts.find((v) => v.goal === id), decisions }), err: '' };
   } catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = 1;
+    return { code: 1, out: '', err: `${error.message}\n` };
   }
+}
+
+if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { code, out, err } = run({ argv: process.argv.slice(2) });
+  process.stdout.write(out);
+  process.stderr.write(err);
+  process.exitCode = code;
 }

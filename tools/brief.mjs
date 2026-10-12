@@ -22,14 +22,14 @@ function lineageOf(goals, id) {
 
 const block = (heading, lines, note) => [`## ${heading}`, '', ...(note ? [note, ''] : []), ...(lines.length ? lines : ['- なし']), ''];
 
-export function buildBrief(goals, id) {
+export function buildBrief(goals, id, command = 'saihai') {
   const lineage = lineageOf(goals, id);
   const target = lineage.at(-1);
   const inherited = (name) => lineage.flatMap((g) => bullets(section(g.human, name)).map((l) => `${l}（${g.frontmatter.id}）`));
   const invariantJudgments = lineage.flatMap((g) =>
     g.judgments.filter((j) => j.strength === '不変条件').map((j) => `- ${j.id}：${j.cells[2]}（${g.frontmatter.id} の判例）`),
   );
-  const log = (kind, rest) => `\`npm run log -- --goal ${id} --kind ${kind} ${rest}\``;
+  const log = (kind, rest) => `\`${command} log --goal ${id} --kind ${kind} ${rest}\``;
   return [
     `# 委任指示：${titleOf(target)}`,
     '',
@@ -50,16 +50,16 @@ export function buildBrief(goals, id) {
     '3. 推奨・仮置きから逸脱するときは、relation を「逸脱」か「仮置きの変更」にし、目的との衝突と、守った場合に失うものを reason に書く',
     `4. 不変条件から逸脱する必要が生じたり、報告条件に当たったりしたら、止まって報告する：${log('報告', '--decision "…" --reason "…"')}`,
     '5. 理由のない制約や、目的に合わない制約に気づいたら、黙って従わずに relation「指摘」で残す',
-    '6. 作業ブランチ（work/<名前>）で実装し、`npm run gate` で main に反映する。main に直接コミットしない',
+    `6. 作業ブランチ（work/<名前>）で実装し、\`${command} gate\` で main に反映する。main に直接コミットしない`,
     '',
   ].join('\n');
 }
 
-export function run({ argv = [], goalsDir = GOALS_DIR } = {}) {
+export function run({ argv = [], goalsDir = GOALS_DIR, command = 'saihai' } = {}) {
   const id = argv[0];
-  if (!id) return { code: 1, out: '', err: '使い方：npm run brief -- <ゴールの ID>\n' };
+  if (!id) return { code: 1, out: '', err: '使い方：saihai brief <ゴールの ID>\n' };
   try {
-    return { code: 0, out: buildBrief(loadGoals(goalsDir), id), err: '' };
+    return { code: 0, out: buildBrief(loadGoals(goalsDir), id, command), err: '' };
   } catch (error) {
     return { code: 1, out: '', err: `${error.message}\n` };
   }

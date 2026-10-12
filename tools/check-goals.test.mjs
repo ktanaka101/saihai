@@ -530,6 +530,11 @@ test('G1.2.E4: 推奨を採用しただけの判例（J37）は不変条件に�
   assert.deepEqual(checkGoal(parse(withJudgment(VALID, row('仮置き')))), []);
 });
 
+test('G1.2.E4: 包括的な指示の判例は J37 に限らない（導入先では別の番号になる。G9）', () => {
+  const row = '| J1 | 2026-10-12 | 何かにする。推奨を採用（J5） | 不変条件 | Q3 | ― |';
+  assert.deepEqual(rules(checkGoal(parse(withJudgment(VALID, row)))), ['G1.2.E4']);
+});
+
 test('G1.2.E5: 観測の式の書き方が誤っていれば違反', () => {
   const judged = (expr) => VALID.replace(HYPO, `- 仮説：使われるはず\n- 当たりの判定：使われる（観測：\`${expr}\`）\n- 外れの判定：使われない（観測：\`利用者数 < 1\`）`);
   assert.deepEqual(checkGoal(parse(judged('利用者数 >= 10'))), []);

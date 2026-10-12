@@ -68,6 +68,9 @@ test('ゴール文書から、状態と判断の件数を、人が答えたも�
   const metrics = collectGoalMetrics(goals);
   assert.equal(metric(metrics, 'ゴールの状態').value, '達成 1・進行中 1');
   assert.equal(metric(metrics, '判断の内訳').value, '人が答えた 1・会話で決まった 1・推奨を採用 1');
+  // 導入先の包括的な指示は別の番号になる（G9）
+  const other = parseGoal('goals/G3-c.md', doc({ id: 'G3', judgments: [{ text: 'Y とする。推奨を採用（J5）', from: 'Q9' }] }));
+  assert.match(metric(collectGoalMetrics([other]), '判断の内訳').value, /推奨を採用 1/);
   assert.equal(metric(metrics, '1ゴールあたりの人の判断').value, '1.0');
   assert.equal(metric(metrics, '判断待ち').value, '2');
 });
@@ -139,7 +142,7 @@ test('git から、門番の通過回数と、文書ができてから達成ま�
 });
 
 test('報告のどの数値にも、出どころと関わる具体例の ID が付き、40行以内に収まる（E2・E5。人が読むのは受信箱なので、報告は D 番号の判断ログのとおり40行まで）', () => {
-  const metrics = observe({ goals, repoDir: mkdtempSync(join(tmpdir(), 'saihai-observe-empty-')), transcriptsDir: '/nonexistent', hidden: () => ({ total: 23, failed: 0 }) });
+  const metrics = observe({ goals, repoDir: mkdtempSync(join(tmpdir(), 'saihai-observe-empty-')), transcriptsDir: '/nonexistent', hidden: () => ({ total: 23, failed: 0 }), hiddenTargets: ['check-goals'], ownExamples: true });
   for (const m of metrics) {
     assert.ok(m.source, m.name);
     assert.ok(m.examples.length > 0, m.name);
@@ -232,6 +235,8 @@ test('mainの検査の失敗は、作業ツリーではなく、main の検査�
   git('init', '-q', '-b', 'main');
   mkdirSync(join(repoDir, 'tools'));
   for (const name of ['check-goals.mjs', 'decision-log.mjs']) writeFileSync(join(repoDir, 'tools', name), readFileSync(new URL(`./${name}`, import.meta.url)));
+  mkdirSync(join(repoDir, 'bin'));
+  writeFileSync(join(repoDir, 'bin', 'saihai.mjs'), ''); // saihai 自身のリポジトリに見せる
   writeFileSync(join(repoDir, 'goals', 'G9-x.md'), doc({ id: 'G9' }).replace('## AI 層', '## 補足'));
   git('add', '-A');
   git('commit', '-q', '-m', 'broken');
@@ -243,6 +248,20 @@ test('mainの検査の失敗は、作業ツリーではなく、main の検査�
   const plain = collectCheckMetric(tempRepo(), [parseGoal('goals/G9-x.md', doc({ id: 'G9' }))], []);
   assert.equal(plain.num, 0);
   assert.match(plain.source, /いまの作業ツリー/);
+});
+
+test('導入先の main に tools/ があっても、そこのスクリプトは実行せず、導入した saihai の検査ツールで main を検査する（レビューの指摘）', () => {
+  const repoDir = tempRepo();
+  const git = (...args) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: repoDir, encoding: 'utf8' });
+  git('init', '-q', '-b', 'main');
+  mkdirSync(join(repoDir, 'tools'));
+  writeFileSync(join(repoDir, 'tools', 'check-goals.mjs'), 'process.exit(1)');
+  writeFileSync(join(repoDir, 'goals', 'G9-x.md'), doc({ id: 'G9' }));
+  git('add', '-A');
+  git('commit', '-q', '-m', 'project');
+  const m = collectCheckMetric(repoDir, [], []);
+  assert.equal(m.num, 0, m.value);
+  assert.match(m.source, /main/);
 });
 
 test('観測を履歴に残し、報告に前回の値を並べる（G7.1.E4）', () => {
@@ -305,6 +324,13 @@ test('報告の表のセルの改行は空白にし、具体例の列の「|」�
   const report = renderReport([{ ...num('a', 1), source: '1行目\n2行目', examples: ['G1|x'] }]);
   assert.match(report, /\| 1行目 2行目 \|/);
   assert.match(report, /G1\\\|x/);
+});
+
+test('saihai 自身以外のプロジェクトでは、組み込みの指標に saihai の具体例の ID を付けない（導入先に無い ID で混乱させない。G9）', () => {
+  const { metrics } = observeAll({ goals, repoDir: tempRepo(), transcriptsDir: '/nonexistent', hidden: () => ({ total: 0 }), ownExamples: false });
+  assert.deepEqual(metric(metrics, 'ゴールの状態').examples, []);
+  assert.deepEqual(metric(metrics, '判定できた仮説の割合').examples, []);
+  assert.match(renderReport(metrics), /\| ゴールの状態 \|.*\| ― \| まだ判断できない \|/);
 });
 
 test('報告に、ゴールごとの仮説の判定を根拠つきで並べる', () => {

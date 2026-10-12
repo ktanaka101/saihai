@@ -200,7 +200,7 @@ updated: 2026-10-12
   - G6 解釈と次の判断（達成。観測を解釈し、次の判断を上申する）
     - G6.1 受信箱と事後検証（達成。人の入り口を受信箱の1つにまとめる）
 - 他のプロジェクトへの導入
-  - G9 他のプロジェクトへの導入（`goals/G9-framework.md`、進行中。saihai コマンドと saihai init）
+  - G9 他のプロジェクトへの導入（`goals/G9-framework.md`、達成。saihai コマンドと saihai init）
 
 ### 参考
 

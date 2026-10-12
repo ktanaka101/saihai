@@ -80,6 +80,12 @@ test('事後確認の項目には、その判断を関連に挙げた後の判�
   assert.doesNotMatch(items.find((i) => i.id === 'D3').detail, /対応：/);
 });
 
+test('受信箱の「見たら」「事後検証の材料」のコマンドは、プロジェクトの呼び方で出す（G9）', () => {
+  const goals = [parseGoal('goals/G1-a.md', doc({ id: 'G1' }))];
+  const items = collectInboxItems({ goals, decisions: [judgment('D1', { relation: '指摘' })], verdicts: [{ goal: 'G1', verdict: '外れ', hypothesis: 'h', basis: 'b' }], command: 'node "/opt/saihai/bin/saihai.mjs"' });
+  assert.deepEqual(items.map((i) => i.action), ['事後検証の材料：node "/opt/saihai/bin/saihai.mjs" aar G1', '見たら：node "/opt/saihai/bin/saihai.mjs" log --goal G1 --kind 確認 --targets D1']);
+});
+
 test('確認した報告は上がらない', () => {
   const goals = [parseGoal('goals/G1-a.md', doc({ id: 'G1' }))];
   const decisions = [{ id: 'D1', goal: 'G1', kind: '報告', decision: 'x', reason: 'y' }, { id: 'D2', goal: 'G1', kind: '確認', targets: ['D1'] }];

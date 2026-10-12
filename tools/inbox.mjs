@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isNoHypothesis, listItems, loadGoals, section } from './check-goals.mjs';
 import { loadDecisions } from './decision-log.mjs';
 import { observeAll } from './observe.mjs';
+import { commandOf } from './root.mjs';
 
 const REPO_DIR = fileURLToPath(new URL('..', import.meta.url));
 const LIMIT = 5; // 一度に出すのは5件まで（J45・G6.1 の不変条件）
@@ -25,10 +26,10 @@ export function reviewReasons(d) {
   ];
 }
 
-export function collectInboxItems({ goals, decisions, verdicts }) {
+export function collectInboxItems({ goals, decisions, verdicts, command = 'saihai' }) {
   const confirmed = new Set(decisions.filter((d) => d.kind === '確認').flatMap((d) => d.targets ?? []));
   const open = (d) => !confirmed.has(d.id);
-  const confirm = (d) => `npm run log -- --goal ${d.goal} --kind 確認 --targets ${d.id}`;
+  const confirm = (d) => `${command} log --goal ${d.goal} --kind 確認 --targets ${d.id}`;
   const reports = decisions
     .filter((d) => d.kind === '報告' && open(d))
     .map((d) => ({ kind: '報告', goal: d.goal, id: d.id, title: d.decision, detail: `理由：${d.reason ?? ''}`, action: `答えたら：${confirm(d)}` }));
@@ -44,7 +45,7 @@ export function collectInboxItems({ goals, decisions, verdicts }) {
   );
   const hypotheses = verdicts
     .filter((v) => v.verdict === '外れ' || v.verdict === '矛盾')
-    .map((v) => ({ kind: '仮説', goal: v.goal, id: v.goal, title: `仮説が${v.verdict}：${v.hypothesis}`, detail: `根拠：${v.basis}`, action: `事後検証の材料：npm run aar -- ${v.goal}` }));
+    .map((v) => ({ kind: '仮説', goal: v.goal, id: v.goal, title: `仮説が${v.verdict}：${v.hypothesis}`, detail: `根拠：${v.basis}`, action: `事後検証の材料：${command} aar ${v.goal}` }));
   // その判断を関連に挙げた後の判断（指摘への対応など）を添える
   const followUps = (d) => decisions.filter((x) => x.id !== d.id && (x.related ?? []).includes(d.id)).map((x) => x.id);
   const reviews = decisions
@@ -107,14 +108,14 @@ export function renderInbox({ items, stages, provisional, limit = LIMIT }) {
   ].join('\n');
 }
 
-export function inbox({ goalsDir = join(REPO_DIR, 'goals'), observe = observeAll } = {}) {
+export function inbox({ root = REPO_DIR, goalsDir = join(root, 'goals'), observe = observeAll, command = commandOf(root) } = {}) {
   const goals = loadGoals(goalsDir);
   const decisions = loadDecisions(goalsDir)
     .map((p) => p.value)
     .filter(Boolean);
-  const { verdicts } = observe({ goals });
+  const { verdicts } = observe({ goals, repoDir: root });
   const stages = goals.map((g) => ({ goal: g.frontmatter.id, title: titleOf(g), stage: stageOf(g, verdicts.find((v) => v.goal === g.frontmatter.id)) }));
-  return renderInbox({ items: collectInboxItems({ goals, decisions, verdicts }), stages, provisional: countProvisional(goals) });
+  return renderInbox({ items: collectInboxItems({ goals, decisions, verdicts, command }), stages, provisional: countProvisional(goals) });
 }
 
 function realPath(path) {
@@ -125,11 +126,17 @@ function realPath(path) {
   }
 }
 
-if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+export function run({ root = REPO_DIR } = {}) {
   try {
-    process.stdout.write(inbox());
+    return { code: 0, out: inbox({ root }), err: '' };
   } catch (error) {
-    process.stderr.write(`受信箱を作れませんでした：${error.message}\n`);
-    process.exitCode = 1;
+    return { code: 1, out: '', err: `受信箱を作れませんでした：${error.message}\n` };
   }
+}
+
+if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { code, out, err } = run();
+  process.stdout.write(out);
+  process.stderr.write(err);
+  process.exitCode = code;
 }

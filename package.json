@@ -1,20 +1,24 @@
 {
   "name": "saihai",
   "private": true,
-  "description": "人は采配を振るだけ。調査・実装・評価・マージは AI が行うゴール工場",
+  "description": "人は采配を振るだけ。ゴール設定・現実からの観測・解釈と次の判断を支え、実装は AI に任せるフレームワーク",
+  "bin": {
+    "saihai": "bin/saihai.mjs"
+  },
   "scripts": {
-    "check": "node tools/check-goals.mjs",
+    "check": "node bin/saihai.mjs check",
     "eval": "node tools/eval-goals.mjs",
     "eval:split": "node tools/eval-split.mjs",
     "eval:hidden": "node tools/eval-hidden.mjs",
-    "gate": "node tools/gate.mjs",
-    "goal:new": "node tools/new-goal.mjs",
-    "observe": "node tools/observe.mjs",
-    "brief": "node tools/brief.mjs",
-    "log": "node tools/decision-log.mjs",
-    "inbox": "node tools/inbox.mjs",
-    "aar": "node tools/aar.mjs",
-    "test": "node --test --experimental-test-coverage --test-coverage-lines=80"
+    "gate": "node bin/saihai.mjs gate",
+    "goal:new": "node bin/saihai.mjs new",
+    "observe": "node bin/saihai.mjs observe",
+    "brief": "node bin/saihai.mjs brief",
+    "log": "node bin/saihai.mjs log",
+    "inbox": "node bin/saihai.mjs inbox",
+    "aar": "node bin/saihai.mjs aar",
+    "test": "node --test --experimental-test-coverage --test-coverage-lines=80",
+    "init": "node bin/saihai.mjs init"
   },
   "engines": {
     "node": ">=22.8"

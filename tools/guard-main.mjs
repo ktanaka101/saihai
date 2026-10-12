@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Claude Code の PreToolUse フック（Bash）。main への直接のコミット・マージ・push を止める（G5.E5・J39）。
-// main への反映は門番（npm run gate）が行う。門番は Claude Code の Bash を通さずに git を操作するので、ここでは止まらない。
+// main への反映は門番（saihai gate）が行う。門番は Claude Code の Bash を通さずに git を操作するので、ここでは止まらない。
 import { spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MESSAGE =
-  'main への直接のコミット・マージ・push は止めています（J39）。作業ブランチ（work/<名前>）でコミットし、main への反映は npm run gate で行ってください。';
+  'main への直接のコミット・マージ・push は止めています。作業ブランチ（work/<名前>）でコミットし、main への反映は門番（saihai gate）で行ってください。';
 
 // ヒアドキュメントの本文と引用符の中身はデータなので取り除き、&& ; | などで区切った各コマンドを見る
 function segments(command) {
@@ -32,8 +32,9 @@ export function shouldBlock({ command, branch }) {
   return false;
 }
 
+// コミットがまだない新しいリポジトリでも分かるように、symbolic-ref で取る（切り離された HEAD なら空）
 function currentBranch(cwd) {
-  const r = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8' });
+  const r = spawnSync('git', ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd, encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : '';
 }
 

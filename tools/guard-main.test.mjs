@@ -34,5 +34,5 @@ test('guard: Bash 以外の道具や、壊れた入力では何もしない', ()
 test('guard: 止めるときは終了コード2で、門番を使うよう伝える', () => {
   const r = guard({ stdin: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git commit -m x' }, cwd: '/repo' }), branchOf: () => 'main' });
   assert.equal(r.code, 2);
-  assert.match(r.err, /npm run gate/);
+  assert.match(r.err, /saihai gate/);
 });
