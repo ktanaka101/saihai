@@ -40,7 +40,7 @@ export function collectInboxItems({ goals, decisions, verdicts, command = 'saiha
       id: q.id,
       title: q.heading.replace(/^### Q\d+\s*/, ''),
       detail: `推奨：${q.lines.find((l) => RECOMMENDED.test(l))?.replace(RECOMMENDED, '') ?? '（なし）'}`,
-      action: `${g.path} の判断待ち ${q.id} に答える`,
+      action: `答える：${command} answer ${q.id} 推奨（自明な案を選ぶなら「自明な案」、ほかの答えなら --text "…"）`,
     })),
   );
   const hypotheses = verdicts
@@ -82,7 +82,17 @@ export function countProvisional(goals) {
   );
 }
 
-export function renderInbox({ items, stages, provisional, limit = LIMIT }) {
+// 古い仮置き（J の番号の小さい順）。放っておくと実質的な不変条件になるので、項目で見せる（G6.2.E5）
+export function oldestProvisional(goals, n = 3) {
+  return goals
+    .flatMap((g) => g.judgments.filter((j) => j.strength === '仮置き').map((j) => ({ id: j.id, goal: g.frontmatter.id, text: j.cells[2] ?? '' })))
+    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
+    .slice(0, n);
+}
+
+const short = (text, n = 50) => (text.length > n ? `${text.slice(0, n)}…` : text);
+
+export function renderInbox({ items, stages, provisional, oldest = [], limit = LIMIT }) {
   const shown = items.slice(0, limit);
   const rest = items.slice(limit);
   const restKinds = [...new Set(rest.map((i) => i.kind))].map((k) => `${k} ${rest.filter((i) => i.kind === k).length} 件`);
@@ -104,6 +114,7 @@ export function renderInbox({ items, stages, provisional, limit = LIMIT }) {
     '## 見直し',
     '',
     `- 残っている仮置き ${provisional} 件（推奨を採用しただけの判断を含む）。事後検証のときに見直す`,
+    ...(oldest.length ? ['- 古いものから：', ...oldest.map((p) => `  - ${p.id}（${p.goal}）：${short(p.text)}`)] : []),
     '',
   ].join('\n');
 }
@@ -115,7 +126,7 @@ export function inbox({ root = REPO_DIR, goalsDir = join(root, 'goals'), observe
     .filter(Boolean);
   const { verdicts } = observe({ goals, repoDir: root });
   const stages = goals.map((g) => ({ goal: g.frontmatter.id, title: titleOf(g), stage: stageOf(g, verdicts.find((v) => v.goal === g.frontmatter.id)) }));
-  return renderInbox({ items: collectInboxItems({ goals, decisions, verdicts, command }), stages, provisional: countProvisional(goals) });
+  return renderInbox({ items: collectInboxItems({ goals, decisions, verdicts, command }), stages, provisional: countProvisional(goals), oldest: oldestProvisional(goals) });
 }
 
 function realPath(path) {

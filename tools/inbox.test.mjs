@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseGoal } from './check-goals.mjs';
-import { collectInboxItems, countProvisional, renderInbox, stageOf } from './inbox.mjs';
+import { collectInboxItems, countProvisional, oldestProvisional, renderInbox, stageOf } from './inbox.mjs';
 import { buildAAR } from './aar.mjs';
 
 const doc = ({ id, status = '進行中', pending = [], hypothesis = '- 仮説：なし（理由：テスト用）', extra = '', ai = '' }) => `---
@@ -134,6 +134,23 @@ test('受信箱が空なら、そう伝える。段階の一覧と仮置きの�
   assert.match(text, /いま判断すべきことはありません/);
   assert.match(text, /実装：G1/);
   assert.match(text, /仮置き 3 件/);
+});
+
+test('判断待ちの項目には、1つのコマンドで答える方法が出る（G6.2.E5）', () => {
+  const goals = [parseGoal('goals/G1-a.md', doc({ id: 'G1', pending: ['Q90'] }))];
+  const [item] = collectInboxItems({ goals, decisions: [], verdicts: [], command: 'saihai' });
+  assert.match(item.action, /saihai answer Q90 推奨/);
+  assert.match(item.action, /自明な案/);
+});
+
+test('見直しの節に、古い仮置きを項目で出す（G6.2.E5）', () => {
+  const table = '\n### 判例\n\n| ID | 日付 | 判断 | 強さ | 上申 | 置き換え |\n|---|---|---|---|---|---|\n| J2 | 2026-10-12 | 二番目の仮置き。推奨を採用（J37） | 仮置き | ― | ― |\n| J1 | 2026-10-11 | 一番目の仮置き | 仮置き | ― | ― |\n| J3 | 2026-10-12 | 推奨の判断 | 推奨 | ― | ― |\n';
+  const goals = [parseGoal('goals/G1-a.md', doc({ id: 'G1', ai: table }))];
+  const oldest = oldestProvisional(goals, 2);
+  assert.deepEqual(oldest.map((p) => p.id), ['J1', 'J2']);
+  const text = renderInbox({ items: [], stages: [], provisional: 2, oldest });
+  assert.match(text, /- J1（G1）：一番目の仮置き/);
+  assert.match(text, /- J2（G1）：二番目の仮置き/);
 });
 
 test('事後検証の材料に、起きるはずだったこと・起きたこと・判断ログの要点が入る（G6.1.E4）', () => {

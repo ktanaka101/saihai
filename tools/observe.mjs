@@ -12,6 +12,7 @@ import { checkDecisions, loadDecisions } from './decision-log.mjs';
 import { TARGETS } from './eval-goals.mjs';
 import { runHidden } from './eval-hidden.mjs';
 import { readConfig, transcriptsDirOf } from './root.mjs';
+import { MARKS } from './answer.mjs';
 
 const REPO_DIR = fileURLToPath(new URL('..', import.meta.url));
 const TOO_FEW = 5; // これ未満の件数の指標は判定に使わない（J51）
@@ -99,13 +100,30 @@ function listJsonl(dir) {
 }
 
 // 作業記録からは件数だけを取り、内容は取らない（J48）
-export function collectTranscriptMetrics(transcriptsDir) {
+// saihai answer がゴール文書の判例に付けた印（G6.2.E2）。推奨どおりか、それ以外か
+export function countDocAnswers(goals) {
+  const texts = goals.flatMap((g) => g.judgments.map((j) => j.cells?.[2] ?? ''));
+  const recommended = texts.filter((t) => t.includes(MARKS.推奨)).length;
+  const other = texts.filter((t) => t.includes(MARKS.自明な案) || t.includes(MARKS.自由記述)).length;
+  return { recommended, total: recommended + other };
+}
+
+// 推奨どおりの割合は、作業記録の回答（AskUserQuestion）とゴール文書の回答の印を合わせて出す
+function recommendedMetric(fromTranscripts, fromDocs) {
+  const total = fromTranscripts.total + fromDocs.total;
+  const recommended = fromTranscripts.recommended + fromDocs.recommended;
+  const rate = total ? recommended / total : undefined;
+  const source = `作業記録（件数のみ）${fromTranscripts.total} 件・ゴール文書の回答の印 ${fromDocs.total} 件`;
+  return metric('推奨どおりの割合', rate === undefined ? '回答なし' : `${fmt(rate)}（${total} 件中 ${recommended} 件）`, total, source, ['G2.E1', 'G6.E5'], rate);
+}
+
+export function collectTranscriptMetrics(transcriptsDir, docAnswers = { recommended: 0, total: 0 }) {
   const source = '作業記録（件数のみ）';
   if (!existsSync(transcriptsDir)) {
     return [
       metric('人の発言', '作業記録なし', 0, source, ['G7.E3', 'G7.E4']),
       metric('人への質問', '作業記録なし', 0, source, ['G3.2.E5', 'G6.E5']),
-      metric('推奨どおりの割合', '作業記録なし', 0, source, ['G2.E1', 'G6.E5']),
+      recommendedMetric({ recommended: 0, total: 0 }, docAnswers),
     ];
   }
   const entries = listJsonl(transcriptsDir).flatMap((file) => readJsonl(file));
@@ -122,12 +140,10 @@ export function collectTranscriptMetrics(transcriptsDir) {
     .flatMap((e) => e.message.content)
     .filter((c) => c.type === 'tool_result' && typeof c.content === 'string' && c.content.includes('questions have been answered'))
     .flatMap((c) => [...c.content.matchAll(/="([^"]*)"/g)].map((m) => m[1].includes('（推奨）')));
-  const recommended = answers.filter(Boolean).length;
-  const rate = answers.length ? recommended / answers.length : undefined;
   return [
     metric('人の発言', String(human), human, source, ['G7.E3', 'G7.E4'], human),
     metric('人への質問', `${asks.length} 回（問い ${questions} 件）`, asks.length, source, ['G3.2.E5', 'G6.E5'], asks.length),
-    metric('推奨どおりの割合', rate === undefined ? '回答なし' : `${fmt(rate)}（${answers.length} 件中 ${recommended} 件）`, answers.length, source, ['G2.E1', 'G6.E5'], rate),
+    recommendedMetric({ recommended: answers.filter(Boolean).length, total: answers.length }, docAnswers),
   ];
 }
 
@@ -301,7 +317,7 @@ export function observeAll({
       ...collectDecisionMetrics(repoDir),
       ...collectGitMetrics(repoDir, goals),
       ...collectHiddenMetrics(hidden, hiddenTargets),
-      ...collectTranscriptMetrics(transcriptsDir),
+      ...collectTranscriptMetrics(transcriptsDir, countDocAnswers(goals)),
       collectCheckMetric(repoDir, goals, history),
     ].map(own),
     ...collectProbeMetrics(repoDir, history),

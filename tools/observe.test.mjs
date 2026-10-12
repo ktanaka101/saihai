@@ -115,6 +115,15 @@ test('作業記録からは、人の発言と人への質問の件数だけを�
   assert.doesNotMatch(JSON.stringify(metrics), /秘密/);
 });
 
+test('推奨どおりの割合は、作業記録の回答と、ゴール文書の回答の印（saihai answer）を合わせて数える（G6.2.E2）', () => {
+  const answered = parseGoal('goals/G4-d.md', doc({ id: 'G4', judgments: [{ text: 'A にする（推奨どおり）', from: 'Q1' }, { text: 'B にする（自明な案を選択）', from: 'Q2' }, { text: 'C にする（推奨どおり）', from: 'Q3' }] }));
+  const { metrics } = observeAll({ goals: [answered], repoDir: tempRepo(), transcriptsDir: '/nonexistent', hidden: () => ({ total: 0 }) });
+  const m = metric(metrics, '推奨どおりの割合');
+  assert.equal(m.num, 2 / 3);
+  assert.equal(m.count, 3);
+  assert.match(m.source, /ゴール文書/);
+});
+
 test('作業記録がなければ、そのことを値に書く', () => {
   const metrics = collectTranscriptMetrics('/nonexistent/transcripts');
   assert.equal(metric(metrics, '人の発言').value, '作業記録なし');
