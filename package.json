@@ -8,6 +8,7 @@
     "eval:split": "node tools/eval-split.mjs",
     "eval:hidden": "node tools/eval-hidden.mjs",
     "gate": "node tools/gate.mjs",
+    "goal:new": "node tools/new-goal.mjs",
     "test": "node --test --experimental-test-coverage --test-coverage-lines=80"
   },
   "engines": {
