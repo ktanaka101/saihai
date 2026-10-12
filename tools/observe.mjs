@@ -13,6 +13,7 @@ import { TARGETS } from './eval-goals.mjs';
 import { runHidden } from './eval-hidden.mjs';
 import { readConfig, transcriptsDirOf } from './root.mjs';
 import { MARKS } from './answer.mjs';
+import { localDate } from './date.mjs';
 
 const REPO_DIR = fileURLToPath(new URL('..', import.meta.url));
 const TOO_FEW = 5; // これ未満の件数の指標は判定に使わない（J51）
@@ -240,7 +241,7 @@ export function collectProbeMetrics(repoDir, history = readJsonl(observationsPat
 
 // --- 人の観測と履歴 ---
 
-export function recordObservation({ repoDir = REPO_DIR, name, num, count = 1, note = '', by = 'AI', date = new Date().toISOString().slice(0, 10) }) {
+export function recordObservation({ repoDir = REPO_DIR, name, num, count = 1, note = '', by = 'AI', date = localDate() }) {
   if (!name || !Number.isFinite(num)) throw new Error('記録には「指標の名前=数値」が要ります');
   const path = observationsPathOf(repoDir);
   mkdirSync(join(repoDir, 'observations'), { recursive: true });

@@ -215,6 +215,7 @@ updated: 2026-10-12
     - G6.2 判断待ちへの回答を1つのコマンドに（達成。saihai answer）
 - 他のプロジェクトへの導入
   - G9 他のプロジェクトへの導入（`goals/G9-framework.md`、達成。saihai コマンドと saihai init）
+  - G10 使い始めの手間をなくす（`goals/G10-plugin.md`、達成。Claude Code のプラグイン）
 
 ### 参考
 

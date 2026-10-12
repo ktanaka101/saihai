@@ -1,5 +1,6 @@
 {
   "command": "node bin/saihai.mjs",
+  "guard": true,
   "hidden": [
     "check-goals"
   ],

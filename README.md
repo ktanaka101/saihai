@@ -15,48 +15,56 @@
 
 - Node.js 22.8 以上（依存パッケージはありません）
 - git
-- [Claude Code](https://code.claude.com/)（スキルとフックを使います）
+- [Claude Code](https://code.claude.com/)（プラグイン・スキル・フックを使います）
 
-## 導入する
+## 使い始める
+
+Claude Code のセッションで、プラグインを1回だけ入れます。
+
+```text
+/plugin marketplace add ktanaka101/saihai
+/plugin install saihai@saihai
+```
+
+あとは、どのプロジェクトでも、やりたいことを一言で伝えるだけです。
+
+> 毎月の支出の集計に手間がかかっていて、使いすぎに気づくのが月末になってしまう。早く気づけるようにしたい。ゴールにして
+
+参謀がゴール文書の置き場（`goals/`）を作り、下調べをして草案を書き、決めてほしいことを判断待ちにします。答えるときは「受信箱」と言うだけです。判断待ちが質問の形で出てくるので、選ぶか書くかで答えます。記録は参謀が行い、人がコマンドを打つことはありません。
+
+人がすることは次の3つだけです。
+
+1. やりたいことを一言で伝える
+2. 「受信箱」と言って、出てきた質問に答える（AI の逸脱や指摘の確認も、ここで出てきます）
+3. 「振り返って」と言うと、参謀が観測して仮説を判定し、次に決めることを受信箱に上げる
+
+saihai を使っていないプロジェクトでは、プラグインは何もしません。プロジェクトに足されるのは `goals/`・`decisions/`・`observations/`・`saihai.config.json` だけで、CLAUDE.md や設定には触れません。
+
+### main への反映を門番に任せる（任意）
+
+`saihai.config.json` に `"guard": true` を足すと、そのプロジェクトでは AI が main に直接コミットできなくなり、門番（`saihai gate`）が検査を通したものだけを main に反映します。既定では、プロジェクトのいつものやり方を変えません。
+
+### プラグインを使わずに入れる
+
+プラグインを使わない場合は、saihai を clone して、プロジェクトで `init` を実行します。CLAUDE.md の saihai の節・スキル・フックもプロジェクトに入ります（既にあるファイルは上書きせず、足すだけです）。
 
 ```bash
 git clone https://github.com/ktanaka101/saihai.git ~/codes/saihai
 ```
 
-導入したいプロジェクト（git のフォルダ）で:
-
 ```bash
 node ~/codes/saihai/bin/saihai.mjs init
 ```
 
-次のものが入ります。既にある CLAUDE.md と `.claude/settings.json` は上書きせず、saihai の節とフックを足すだけです。2回動かしても重複しません。
+## コマンド（参謀が使うもの）
 
-| 入るもの | 役割 |
-|---|---|
-| `goals/G0-project.md` | ゴールの木の根。最初は雛形 |
-| `decisions/log.jsonl` | 判断ログ（実装する AI の判断・逸脱・報告） |
-| `saihai.config.json` | 門番の検査と観測のコマンドの設定 |
-| `CLAUDE.md` の saihai の節 | 実装する AI への約束（委任指示・判断ログ・門番） |
-| `.claude/skills/goal-draft`・`interpret` | 参謀の手順（草案づくり、解釈と事後検証） |
-| `.claude/settings.json` のフック | ゴール文書の検査、main への直接のコミットの防止 |
-
-フックとスキルからは、PATH 上に `saihai` があればそれを、なければ init した saihai の絶対パスを呼びます。saihai のフォルダを動かしたら、もう一度 init してください。
-
-## 使う
-
-Claude Code で、やりたいことを一言で伝えます（例：「CSV の取り込みを速くしたい。ゴールにして」）。参謀が goal-draft スキルで草案を作り、判断待ちを聞いてきます。対話の外でも、受信箱（`saihai inbox`）に出たコマンドで答えられます。
-
-人がすることは次の3つだけです。
-
-1. やりたいことを一言で伝える
-2. 受信箱を開き、判断待ちに `saihai answer` で答え、事後確認を `saihai confirm` で確かめる
-3. 仮説の判定が出たら、参謀の事後検証を読んで次の判断に答える
+人が打つ必要はありませんが、参謀は次のコマンドで記録や検査を行います。プラグインでは `saihai`、プラグインなしでは `node ~/codes/saihai/bin/saihai.mjs` で呼びます。
 
 | コマンド | すること |
 |---|---|
 | `saihai inbox` | 受信箱：いま人が判断すべきこと（5件まで）と、ゴールごとの段階 |
-| `saihai answer Q12 推奨` | 判断待ちに答える（「自明な案」や `--text "…"` でも）。ゴール文書を開かずに判例に移る |
-| `saihai confirm D3 D6` | 受信箱の事後確認（AI の逸脱・指摘など）を見たら、確認済みにする |
+| `saihai answer Q12 推奨` | 判断待ちへの答えを判例に移す（「自明な案」や `--text "…"` でも） |
+| `saihai confirm D3 D6` | 人が見た事後確認を確認済みにする |
 | `saihai new --parent G0 --slug name --title "題名" --summary "要約"` | ゴール文書の雛形を作る |
 | `saihai check` | ゴール文書と判断ログを検査する |
 | `saihai brief G1` | 実装する AI への委任指示（祖先のゴールの不変条件・報告条件を含む） |
@@ -64,8 +72,6 @@ Claude Code で、やりたいことを一言で伝えます（例：「CSV の�
 | `saihai observe` | 観測と仮説の判定。`--save` で履歴に残す。`--record 指標=値` で人の観測を記録する |
 | `saihai aar G1` | 事後検証の材料（起きるはずだったこと・起きたこと） |
 | `saihai gate` | 門番：最新の main とマージした結果を検査し、通れば main に反映して push する |
-
-`saihai` は `node ~/codes/saihai/bin/saihai.mjs` のことです。対象のプロジェクトは `--root`、環境変数 `SAIHAI_ROOT`、今のフォルダから上へたどる、の順で決まります。
 
 ## ゴール文書
 

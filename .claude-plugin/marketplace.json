@@ -1,0 +1,12 @@
+{
+  "name": "saihai",
+  "description": "saihai（采配）の配布元",
+  "owner": { "name": "Kentaro Tanaka" },
+  "plugins": [
+    {
+      "name": "saihai",
+      "source": "./",
+      "description": "一言でゴールの草案を作り、受信箱で判断待ちに答える。実装以外のボトルネック（ゴール設定・観測・解釈）を支える"
+    }
+  ]
+}

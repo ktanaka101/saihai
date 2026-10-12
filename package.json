@@ -18,7 +18,8 @@
     "inbox": "node bin/saihai.mjs inbox",
     "aar": "node bin/saihai.mjs aar",
     "test": "node --test --experimental-test-coverage --test-coverage-lines=80",
-    "init": "node bin/saihai.mjs init"
+    "init": "node bin/saihai.mjs init",
+    "render": "node tools/render-self.mjs"
   },
   "engines": {
     "node": ">=22.8"
