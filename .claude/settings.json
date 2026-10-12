@@ -1,4 +1,11 @@
 {
+  "permissions": {
+    "deny": [
+      "Read(~/codes/saihai-evals/**)",
+      "Edit(~/codes/saihai-evals/**)",
+      "Bash(*saihai-evals*)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {

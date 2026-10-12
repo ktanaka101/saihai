@@ -192,10 +192,12 @@ function stop(root, summary) {
   return { code: 1, summary, root };
 }
 
-export function runSplitEvaluation({ targetName, goalsDir = GOALS_DIR, workRoot = tmpdir(), launch = launchClaude }) {
+// ケースを作る AI と2つの評価 AI を順に起動し、各ケースを一致・実装の不具合・割れ・出力の不備に分ける。
+// 途中で止まったら stopped に理由を入れて返す。G3.2 と G3.3 で共有する。
+export function generateAndPredict({ targetName, goalsDir = GOALS_DIR, workRoot = tmpdir(), launch = launchClaude, prefix = 'saihai-split-' }) {
   const target = TARGETS[targetName];
   if (!target) throw new Error(`評価対象 ${targetName} はありません（${Object.keys(TARGETS).join('・')} のどれか）`);
-  const root = mkdtempSync(join(realpathSync(workRoot), 'saihai-split-'));
+  const root = mkdtempSync(join(realpathSync(workRoot), prefix));
 
   // 1つのプロセスを起動する。問題があれば、評価全体を止める理由を返す
   const step = (role, prompt, budget, prepare = () => {}) => {
@@ -211,13 +213,13 @@ export function runSplitEvaluation({ targetName, goalsDir = GOALS_DIR, workRoot 
   };
 
   const generated = step('generator', (specs) => generatorPrompt(target, specs), BUDGETS.generator);
-  if (generated) return stop(root, generated);
+  if (generated) return { root, results: [], stopped: generated };
   const inputs = listInputs(join(root, 'generator'));
   const valid = inputs.filter((i) => !i.problem);
-  if (valid.length === 0) return stop(root, 'ケースが1つもありません（ケースを作る AI の出力の不備）');
+  if (valid.length === 0) return { root, results: [], stopped: 'ケースが1つもありません（ケースを作る AI の出力の不備）' };
   for (const view of ['A', 'B']) {
     const predicted = step(`predictor-${view}`, (specs) => predictorPrompt(target, specs, view), BUDGETS.predictor, (cwd) => copyInputs(valid, cwd));
-    if (predicted) return stop(root, predicted);
+    if (predicted) return { root, results: [], stopped: predicted };
   }
 
   const results = inputs.map((input) => {
@@ -231,7 +233,12 @@ export function runSplitEvaluation({ targetName, goalsDir = GOALS_DIR, workRoot 
     if (!compare(a.value, b.value)) return { ...input, kind: 'split', a: a.value, b: b.value, actual };
     return { ...input, kind: compare(a.value, actual) ? 'agreed' : 'bug', a: a.value, b: b.value, actual };
   });
+  return { root, results, stopped: null };
+}
 
+export function runSplitEvaluation(options) {
+  const { root, results, stopped } = generateAndPredict(options);
+  if (stopped) return stop(root, stopped);
   const of = (kind) => results.filter((r) => r.kind === kind);
   const { asked, deferred } = selectQuestions({ splits: of('split'), agreed: of('agreed') });
   const summary = [
