@@ -6,18 +6,20 @@ import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const GOALS_DIR = fileURLToPath(new URL('../goals/', import.meta.url));
-const REQUIRED_KEYS = ['id', 'parent', 'status', 'updated'];
+const REQUIRED_KEYS = ['id', 'parent', 'status', 'version', 'updated'];
 const STATUSES = ['議論中', '進行中', '達成', '中止'];
 const DECIDED_BY_HUMAN = ['達成', '中止']; // この状態にするのは人の判断で、判例に残す（J18）
 const HUMAN_LINE_LIMIT = 40; // 判断待ちを除く（J17）
-const PENDING_KEYS = ['**推奨**', '**自明な案**', '取り消し'];
+const PENDING_LABELS = ['推奨', '自明な案', '取り消し']; // 「- 推奨：」のような箇条書きの見出し語。太字は任意
 const JUDGMENT_COLUMNS = 5; // ID・日付・判断・上申・置き換え
-const JUDGMENT_FROM = /^(―|Q\d+(\s*[、,]\s*Q\d+)*)$/;
+const JUDGMENT_FROM = /^(―|Q\d+(\s*、\s*Q\d+)*)$/;
 const FILE_NAME = /^(G\d+(?:\.\d+)*)-[a-z0-9-]+\.md$/;
 const FENCED = '\u0000'; // コードブロックの中身。行としては数えるが、見出しや表としては読まない
 const OK = { code: 0, out: '', err: '' };
 
 const isHeading = (line, name) => new RegExp(`^## ${name}(（.*）)?\\s*$`).test(line);
+const hasLabel = (lines, label) =>
+  lines.some((line) => new RegExp(`^\\s*[-*]\\s*(\\*\\*)?${label}(\\*\\*)?\\s*[：:]`).test(line));
 const qIds = (text) => [...(text ?? '').matchAll(/Q\d+/g)].map((m) => m[0]);
 
 function section(lines, name) {
@@ -186,8 +188,10 @@ export function checkGoal(goal) {
       ? [['G1.E3', `人間層が${lines}行あります（判断待ちを除いて${HUMAN_LINE_LIMIT}行まで）。ゴールの分割を検討してください`]]
       : []),
     ...goal.pending.flatMap((q) => {
-      const missing = PENDING_KEYS.filter((key) => !q.lines.join('\n').includes(key));
-      return missing.length ? [['G1.E4', `${q.id} に ${missing.join('・')} がありません`]] : [];
+      const missing = PENDING_LABELS.filter((label) => !hasLabel(q.lines, label));
+      return missing.length
+        ? [['G1.E4', `${q.id} に ${missing.join('・')} の項目がありません（「- 推奨：」のように箇条書きで書く）`]]
+        : [];
     }),
     ...formatViolations(goal).map((message) => ['G1.書式', message]),
   ];
@@ -276,10 +280,20 @@ function respond(mode, input, lines) {
 // --hook は PostToolUse（Edit・Write）用。ゴール文書以外の編集では何もしない。
 // --stop は Stop 用。Bash などで編集された場合も含め、作業の終わりに全件を検査する。
 // どちらも違反は終了コード2で AI に返す（G1.1.E3）。検査そのものの失敗も、黙って成功扱いにはしない。
-export function run({ argv = [], stdin = '', goalsDir = GOALS_DIR } = {}) {
+// --goals-dir は、実装を見ない評価 AI が自分で用意したゴール文書を検査するためのもの（G3.E6）。
+function goalsDirFrom(argv, fallback) {
+  const at = argv.indexOf('--goals-dir');
+  if (at === -1) return fallback;
+  const dir = argv[at + 1];
+  if (!dir || dir.startsWith('--')) throw new Error('--goals-dir の後に検査するフォルダを指定してください');
+  return resolve(dir);
+}
+
+export function run({ argv = [], stdin = '', goalsDir: defaultDir = GOALS_DIR } = {}) {
   const mode = argv.includes('--hook') ? 'hook' : argv.includes('--stop') ? 'stop' : 'cli';
   let input = {};
   try {
+    const goalsDir = goalsDirFrom(argv, defaultDir);
     input = mode === 'cli' ? {} : parseInput(stdin);
     if (mode === 'hook') {
       const file = input.tool_input?.file_path;

@@ -341,10 +341,32 @@ test('上申列は ― か Q の ID だけ。それ以外の書き方は違反�
   assert.deepEqual(rules(v), ['G1.書式']);
 });
 
-test('上申列の Q は「、」か「,」で区切って複数書ける', () => {
-  for (const from of ['Q3、Q4', 'Q3, Q4']) {
-    assert.deepEqual(checkGoal(parse(withJudgment(VALID, `| J1 | 2026-10-12 | 判断 | ${from} | ― |`))), [], from);
+// G3.E6：実装を見ない評価 AI が、仕様とのずれを見つけた（G1 の書式の定義が正）
+
+test('上申列の Q は「、」で区切って複数書ける', () => {
+  assert.deepEqual(checkGoal(parse(withJudgment(VALID, '| J1 | 2026-10-12 | 判断 | Q3、Q4 | ― |'))), []);
+});
+
+test('上申列を「,」で区切ると違反（書式の定義は「、」区切り）', () => {
+  for (const from of ['Q3, Q4', 'Q3,Q4']) {
+    assert.deepEqual(rules(checkGoal(parse(withJudgment(VALID, `| J1 | 2026-10-12 | 判断 | ${from} | ― |`)))), ['G1.書式'], from);
   }
+});
+
+test('G1.E1: version がなければ違反（書式の定義では必須）', () => {
+  assert.deepEqual(rules(checkGoal(parse(VALID.replace('version: 0.1\n', '')))), ['G1.E1']);
+});
+
+test('G1.E4: 判断待ちの3つの項目は、箇条書きの見出し語として書く（太字は任意）', () => {
+  const plain = PENDING_OK.replace('**推奨**', '推奨').replace('**自明な案**', '自明な案');
+  assert.deepEqual(checkGoal(parse(withPending(VALID, plain))), []);
+});
+
+test('G1.E4: 本文に「取り消し」という語があるだけでは、取り消しの可否とみなさない', () => {
+  const loose = PENDING_OK.replace('- 取り消し：可能', '- 補足：取り消しは可');
+  const v = checkGoal(parse(withPending(VALID, loose)));
+  assert.deepEqual(rules(v), ['G1.E4']);
+  assert.match(v[0].message, /取り消し/);
 });
 
 // --- J18：ゴールを達成・中止にするのは人。その判断は判例に残す ---
@@ -366,6 +388,21 @@ test('G1.E10: 達成・中止を決めた判例があれば違反なし', () => 
 test('G1.E10: 別の状態を決めた判例では足りない', () => {
   const text = withJudgment(VALID.replace('status: 進行中', 'status: 達成'), '| J1 | 2026-10-12 | G9 を中止とする | Q3 | ― |');
   assert.deepEqual(rules(checkGoal(parse(text))), ['G1.E10']);
+});
+
+// --- G3.E6：実装を見ない評価 AI が、外から検査対象のフォルダを指定して使う ---
+
+test('run --goals-dir: 指定したフォルダのゴール文書を検査する', () => {
+  const dir = tempGoals({ 'G9-test.md': VALID.replace('## AI 層', '## 補足') });
+  const r = run({ argv: ['--goals-dir', dir], goalsDir: '/nonexistent/goals' });
+  assert.equal(r.code, 1);
+  assert.match(r.err, /G9-test\.md: \[G1\.E2\]/);
+});
+
+test('run --goals-dir: フォルダの指定がなければ検査の失敗として扱う', () => {
+  const r = run({ argv: ['--goals-dir'] });
+  assert.equal(r.code, 1);
+  assert.match(r.err, /--goals-dir/);
 });
 
 test('CLI: シンボリックリンク経由で起動しても検査が実際に走る', () => {
