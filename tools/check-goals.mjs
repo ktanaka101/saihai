@@ -4,6 +4,7 @@
 import { readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkDecisions, decisionsPathOf, loadDecisions } from './decision-log.mjs';
 
 const GOALS_DIR = fileURLToPath(new URL('../goals/', import.meta.url));
 const REQUIRED_KEYS = ['id', 'parent', 'status', 'version', 'updated'];
@@ -28,7 +29,7 @@ const hasLabel = (lines, label) =>
   lines.some((line) => new RegExp(`^\\s*[-*]\\s*(\\*\\*)?${label}(\\*\\*)?：`).test(line)); // 揺れを許すのは太字だけ
 const qIds = (text) => [...(text ?? '').matchAll(/Q\d+/g)].map((m) => m[0]);
 
-function section(lines, name) {
+export function section(lines, name) {
   const start = lines.findIndex((line) => isHeading(line, name));
   if (start === -1) return null;
   const rest = lines.slice(start + 1);
@@ -377,10 +378,13 @@ export function run({ argv = [], stdin = '', goalsDir: defaultDir = GOALS_DIR } 
     input = mode === 'cli' ? {} : parseInput(stdin);
     if (mode === 'hook') {
       const file = input.tool_input?.file_path;
-      if (!file || !isGoalFile(file, goalsDir)) return OK;
+      const isDecisions = file && realPath(file) === realPath(decisionsPathOf(goalsDir));
+      if (!file || !(isGoalFile(file, goalsDir) || isDecisions)) return OK;
     }
     const goals = loadGoals(goalsDir);
-    const violations = checkRepo(goals);
+    const goalIds = goals.map((g) => g.frontmatter?.id).filter(Boolean);
+    // 判断ログ（G8）も同じ検査で確かめる
+    const violations = [...checkRepo(goals), ...checkDecisions(loadDecisions(goalsDir), goalIds)];
     if (violations.length === 0) {
       // 警告は違反ではないので終了コードは0のまま。フックでは出さない（AI の作業を止めないため）
       const warnings = goals.flatMap(warnGoal);

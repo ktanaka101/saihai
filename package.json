@@ -10,6 +10,8 @@
     "gate": "node tools/gate.mjs",
     "goal:new": "node tools/new-goal.mjs",
     "observe": "node tools/observe.mjs",
+    "brief": "node tools/brief.mjs",
+    "log": "node tools/decision-log.mjs",
     "test": "node --test --experimental-test-coverage --test-coverage-lines=80"
   },
   "engines": {
