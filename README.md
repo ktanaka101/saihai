@@ -19,14 +19,22 @@
 
 ## 使い始める
 
-Claude Code のセッションで、プラグインを1回だけ入れます。
+使いたいプロジェクトにだけ、プラグインを入れます。そのプロジェクトのフォルダで:
 
-```text
-/plugin marketplace add ktanaka101/saihai
-/plugin install saihai@saihai
+```bash
+claude plugin marketplace add ktanaka101/saihai
 ```
 
-あとは、どのプロジェクトでも、やりたいことを一言で伝えるだけです。
+```bash
+claude plugin install saihai@saihai --scope local
+```
+
+`--scope local` にすると、自分の、そのプロジェクトだけで有効になります（`.claude/settings.local.json` に記録されます）。ほかのプロジェクトには影響しません。セッションの中で `/plugin install saihai@saihai` を使うときは、範囲を聞かれるので「Install for you, in this repo only」を選びます。
+
+- `marketplace add` は、どこから入れられるかの一覧をユーザーの設定に登録するだけです。これだけではどのプロジェクトでも動きません
+- チームで使うなら `--scope project`（`.claude/settings.json` に記録し、コミットして共有）、すべてのプロジェクトで使うなら `--scope user` です
+
+あとは、そのプロジェクトで、やりたいことを一言で伝えるだけです。
 
 > 毎月の支出の集計に手間がかかっていて、使いすぎに気づくのが月末になってしまう。早く気づけるようにしたい。ゴールにして
 
@@ -38,7 +46,7 @@ Claude Code のセッションで、プラグインを1回だけ入れます。
 2. 「受信箱」と言って、出てきた質問に答える（AI の逸脱や指摘の確認も、ここで出てきます）
 3. 「振り返って」と言うと、参謀が観測して仮説を判定し、次に決めることを受信箱に上げる
 
-saihai を使っていないプロジェクトでは、プラグインは何もしません。プロジェクトに足されるのは `goals/`・`decisions/`・`observations/`・`saihai.config.json` だけで、CLAUDE.md や設定には触れません。
+もし user の範囲で入れても、saihai を使っていないプロジェクトでは、プラグインのフックは何もしません。プロジェクトに足されるのは `goals/`・`decisions/`・`observations/`・`saihai.config.json` だけで、CLAUDE.md や設定には触れません。
 
 ### main への反映を門番に任せる（任意）
 
