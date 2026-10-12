@@ -159,23 +159,54 @@ test('途中で止まったら保管せず、一時作業フォルダは消し�
   assert.deepEqual(readdirSync(workRoot), []);
 });
 
-test('auditContacts: 保管場所を指す道具の使用と、保管場所の名前を含む Bash を一覧にする（J31）', () => {
-  const storeDir = '/home/u/codes/saihai-evals';
+// 監査用の作業記録を作る。各道具の使用には、結果（許可・拒否・失敗・なし）を付けられる
+function writeTranscript(entries) {
   const transcriptsDir = tempDir('transcripts');
-  const line = (tool, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: tool, input }] } });
   mkdirSync(join(transcriptsDir, 'project'), { recursive: true });
-  writeFileSync(
-    join(transcriptsDir, 'project', 'session-1.jsonl'),
-    [
-      line('Read', { file_path: `${storeDir}/check-goals/h001/expected.json` }),
-      line('Bash', { command: 'cat ~/codes/saihai-evals/check-goals/h001/G9-test.md' }),
-      line('Grep', { pattern: 'x', path: `${storeDir}/check-goals` }),
-      line('Edit', { file_path: '/repo/.claude/settings.json', new_string: '"Read(~/codes/saihai-evals/**)"' }),
-      line('Read', { file_path: '/repo/goals/G1-goal-format.md' }),
-      'not json',
-    ].join('\n'),
-  );
-  const { contacts, summary } = auditContacts({ transcriptsDir, storeDir });
+  const lines = entries.flatMap(({ tool, input, result }, i) => {
+    const id = `toolu_${i}`;
+    const use = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: tool, input }] } });
+    if (result === undefined) return [use];
+    const content = result === 'allowed' ? 'ok' : result === 'denied' ? 'Permission to use Bash has been denied.' : 'Error: No such tool available';
+    const res = JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: result !== 'allowed', content }] } });
+    return [use, res];
+  });
+  writeFileSync(join(transcriptsDir, 'project', 'session-1.jsonl'), [...lines, 'not json'].join('\n'));
+  return transcriptsDir;
+}
+
+const STORE = '/home/u/codes/saihai-evals';
+const audit = (entries) => auditContacts({ transcriptsDir: writeTranscript(entries), storeDir: STORE, home: '/home/u' });
+
+test('auditContacts: 保管場所を指す道具の使用と、保管場所のパスを含む Bash を一覧にする（J31）', () => {
+  const { contacts, summary } = audit([
+    { tool: 'Read', input: { file_path: `${STORE}/check-goals/h001/expected.json` }, result: 'denied' },
+    { tool: 'Bash', input: { command: 'cat ~/codes/saihai-evals/check-goals/h001/G9-test.md' }, result: 'denied' },
+    { tool: 'Grep', input: { pattern: 'x', path: `${STORE}/check-goals` }, result: 'denied' },
+    { tool: 'Edit', input: { file_path: '/repo/.claude/settings.json', new_string: '"Read(~/codes/saihai-evals/**)"' }, result: 'allowed' },
+    { tool: 'Read', input: { file_path: '/repo/goals/G1-goal-format.md' }, result: 'allowed' },
+  ]);
   assert.deepEqual(contacts.map((c) => c.tool), ['Read', 'Bash', 'Grep']);
   assert.match(summary, /接触 3 件/);
+});
+
+test('auditContacts: 許可・拒否・失敗・結果不明を区別する（G5.E4）', () => {
+  const { contacts, allowed, summary } = audit([
+    { tool: 'Read', input: { file_path: `${STORE}/a` }, result: 'allowed' },
+    { tool: 'Read', input: { file_path: `${STORE}/b` }, result: 'denied' },
+    { tool: 'Grep', input: { path: STORE }, result: 'failed' },
+    { tool: 'Read', input: { file_path: `${STORE}/c` } },
+  ]);
+  assert.deepEqual(contacts.map((c) => c.outcome), ['allowed', 'denied', 'failed', 'unknown']);
+  assert.equal(allowed, 2);
+  assert.match(summary, /許可 1 件・拒否 1 件・失敗 1 件・不明 1 件/);
+});
+
+test('auditContacts: 名前が似た別のパスと、ヒアドキュメントの本文は接触とみなさない', () => {
+  const { contacts } = audit([
+    { tool: 'Bash', input: { command: 'mkdir -p /tmp/x/saihai-evals-probe' }, result: 'allowed' },
+    { tool: 'Bash', input: { command: "git commit -F - <<'EOF'\n隠しシナリオを ~/codes/saihai-evals に保管\nEOF" }, result: 'allowed' },
+    { tool: 'Bash', input: { command: 'ls ~/codes/saihai-evals' }, result: 'denied' },
+  ]);
+  assert.deepEqual(contacts.map((c) => c.outcome), ['denied']);
 });

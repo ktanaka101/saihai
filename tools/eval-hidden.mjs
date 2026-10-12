@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, compare } from './eval-goals.mjs';
 import { generateAndPredict, selectQuestions } from './eval-split.mjs';
@@ -158,28 +158,59 @@ function listTranscripts(dir) {
   });
 }
 
-// 作業記録を走査し、保管場所への接触（保管場所を指す道具の使用と、保管場所の名前を含む Bash）を一覧にする（J31）。
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// 保管場所のパスそのもの（絶対パスか ~ からのパス）に一致させる。saihai-evals-probe のような別のパスは拾わない
+function storePattern(storeDir, home) {
+  const forms = [storeDir, ...(storeDir.startsWith(`${home}/`) ? [`~${storeDir.slice(home.length)}`] : [])];
+  return new RegExp(`(${forms.map(escapeRegExp).join('|')})(?=$|[/\\s"'\`)])`);
+}
+
+// ヒアドキュメントの本文（コミットメッセージなど）はデータなので、最初の << より前だけを見る
+const commandHead = (command) => command.split('<<')[0];
+
+function readEntries(file) {
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function outcomeOf(result) {
+  if (!result) return 'unknown';
+  if (!result.is_error) return 'allowed';
+  return /denied|permission/i.test(JSON.stringify(result.content ?? '')) ? 'denied' : 'failed';
+}
+
+// 作業記録を走査し、保管場所への接触（保管場所を指す道具の使用と、保管場所のパスを含む Bash）を一覧にする（J31）。
+// 道具の使用と結果を突き合わせ、許可・拒否・失敗・結果不明に分ける。門番は許可と不明を問題にする（G5.E4）。
 // ファイルに書き込む中身（設定やゴール文書に保管場所の名前を書くこと）は接触とみなさない。
-export function auditContacts({ transcriptsDir = TRANSCRIPTS_DIR, storeDir = STORE_DIR } = {}) {
-  const name = basename(storeDir);
+export function auditContacts({ transcriptsDir = TRANSCRIPTS_DIR, storeDir = STORE_DIR, home = homedir() } = {}) {
+  const pattern = storePattern(storeDir, home);
+  const touches = (input = {}) =>
+    [input.file_path, input.path, input.notebook_path].some((v) => typeof v === 'string' && pattern.test(v)) ||
+    (typeof input.command === 'string' && pattern.test(commandHead(input.command)));
   const files = listTranscripts(transcriptsDir);
-  const contacts = files.flatMap((file) =>
-    readFileSync(file, 'utf8')
-      .split('\n')
-      .flatMap((line) => {
-        try {
-          const entry = JSON.parse(line);
-          return entry.type === 'assistant' ? (entry.message?.content ?? []) : [];
-        } catch {
-          return [];
-        }
-      })
-      .filter((item) => item.type === 'tool_use')
-      .filter((item) => [item.input?.file_path, item.input?.path, item.input?.notebook_path, item.input?.command].some((v) => typeof v === 'string' && v.includes(name)))
-      .map((item) => ({ file, tool: item.name })),
-  );
+  const contacts = files.flatMap((file) => {
+    const entries = readEntries(file);
+    const contentOf = (type) => entries.filter((e) => e.type === type).flatMap((e) => (Array.isArray(e.message?.content) ? e.message.content : []));
+    const results = new Map(contentOf('user').filter((i) => i.type === 'tool_result').map((i) => [i.tool_use_id, i]));
+    return contentOf('assistant')
+      .filter((i) => i.type === 'tool_use' && touches(i.input))
+      .map((i) => ({ file, tool: i.name, outcome: outcomeOf(results.get(i.id)) }));
+  });
+  const count = (outcome) => contacts.filter((c) => c.outcome === outcome).length;
   const byFile = [...new Set(contacts.map((c) => c.file))].map((file) => `- ${file}：${contacts.filter((c) => c.file === file).length} 件`);
-  return { contacts, summary: [`作業記録 ${files.length} 件を調べ、保管場所への接触 ${contacts.length} 件`, ...byFile].join('\n') };
+  const summary = [
+    `作業記録 ${files.length} 件を調べ、保管場所への接触 ${contacts.length} 件（許可 ${count('allowed')} 件・拒否 ${count('denied')} 件・失敗 ${count('failed')} 件・不明 ${count('unknown')} 件）`,
+    ...byFile,
+  ].join('\n');
+  return { contacts, allowed: count('allowed') + count('unknown'), summary };
 }
 
 function realPath(path) {
@@ -202,7 +233,7 @@ if (process.argv[1] && realPath(process.argv[1]) === fileURLToPath(import.meta.u
         : command === 'run'
           ? runHidden({ targetName })
           : command === 'audit'
-            ? { ...auditContacts(), code: 0 }
+            ? (({ summary, allowed }) => ({ summary, code: allowed ? 1 : 0 }))(auditContacts())
             : { code: 1, summary: '使い方：eval-hidden.mjs generate|run [評価対象] または eval-hidden.mjs audit' };
     process.stdout.write(`${result.summary}\n`);
     process.exitCode = result.code;
