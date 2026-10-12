@@ -83,7 +83,7 @@ test('事後確認の項目には、その判断を関連に挙げた後の判�
 test('受信箱の「見たら」「事後検証の材料」のコマンドは、プロジェクトの呼び方で出す（G9）', () => {
   const goals = [parseGoal('goals/G1-a.md', doc({ id: 'G1' }))];
   const items = collectInboxItems({ goals, decisions: [judgment('D1', { relation: '指摘' })], verdicts: [{ goal: 'G1', verdict: '外れ', hypothesis: 'h', basis: 'b' }], command: 'node "/opt/saihai/bin/saihai.mjs"' });
-  assert.deepEqual(items.map((i) => i.action), ['事後検証の材料：node "/opt/saihai/bin/saihai.mjs" aar G1', '見たら：node "/opt/saihai/bin/saihai.mjs" log --goal G1 --kind 確認 --targets D1']);
+  assert.deepEqual(items.map((i) => i.action), ['事後検証の材料：node "/opt/saihai/bin/saihai.mjs" aar G1', '見たら：node "/opt/saihai/bin/saihai.mjs" confirm D1']);
 });
 
 test('確認した報告は上がらない', () => {
@@ -141,6 +141,14 @@ test('判断待ちの項目には、1つのコマンドで答える方法が出�
   const [item] = collectInboxItems({ goals, decisions: [], verdicts: [], command: 'saihai' });
   assert.match(item.action, /saihai answer Q90 推奨/);
   assert.match(item.action, /自明な案/);
+});
+
+test('受信箱に出した事後確認は、1つのコマンドでまとめて確認済みにできる', () => {
+  const goals = [parseGoal('goals/G1-a.md', doc({ id: 'G1' }))];
+  const items = collectInboxItems({ goals, decisions: [judgment('D1', { relation: '指摘' }), judgment('D2', { relation: '逸脱' })], verdicts: [], command: 'saihai' });
+  const text = renderInbox({ items, stages: [], provisional: 0, command: 'saihai' });
+  assert.match(text, /まとめて確認済みにする：saihai confirm D1 D2/);
+  assert.doesNotMatch(renderInbox({ items: [], stages: [], provisional: 0 }), /まとめて/);
 });
 
 test('見直しの節に、古い仮置きを項目で出す（G6.2.E5）', () => {

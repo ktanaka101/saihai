@@ -273,6 +273,24 @@ test('導入先の main に tools/ があっても、そこのスクリプトは
   assert.match(m.source, /main/);
 });
 
+test('mainの検査の失敗は、門番を通した各時点の main を、その時点の検査ツールで検査して数える（G5 の仮説を判定できる件数にする）', () => {
+  const repoDir = tempRepo();
+  const git = (...args) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: repoDir, encoding: 'utf8' });
+  git('init', '-q', '-b', 'main');
+  const commit = (text, subject) => {
+    writeFileSync(join(repoDir, 'goals', 'G9-x.md'), text);
+    git('add', '-A');
+    git('commit', '-q', '-m', subject);
+  };
+  commit(doc({ id: 'G9' }), 'initial');
+  commit(doc({ id: 'G9' }).replace('## AI 層', '## 補足'), 'Merge work/a (門番を通過)');
+  commit(doc({ id: 'G9' }), 'Merge work/b (門番を通過)');
+  const m = collectCheckMetric(repoDir, [], []);
+  assert.equal(m.num, 1);
+  assert.equal(m.count, 2);
+  assert.match(m.value, /2 個の状態/);
+});
+
 test('観測を履歴に残し、報告に前回の値を並べる（G7.1.E4）', () => {
   const repoDir = tempRepo();
   saveSnapshot(repoDir, [num('a', 0.5)], '2026-10-12T00:00:00Z');

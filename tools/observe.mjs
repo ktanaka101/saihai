@@ -164,37 +164,55 @@ function collectHiddenMetrics(hidden, targets) {
 // 合否のような1回の値は、履歴に残した回数を件数にする（G7.1 の仮置き）
 const historyCount = (history, name) => history.filter((h) => h.kind === '観測' && h.metrics?.some((m) => m.name === name)).length + 1;
 
-// main のゴール文書と判断ログを一時フォルダに取り出す。saihai 自身なら検査ツール（tools）も取り出す。git や main がなければ null
+// ある時点（ref）のゴール文書と判断ログを一時フォルダに取り出す。saihai 自身なら検査ツール（tools）も取り出す
 const INSTALLED_CHECKER = fileURLToPath(new URL('./check-goals.mjs', import.meta.url));
-function extractMain(repoDir) {
-  const ls = spawnSync('git', ['ls-tree', '-r', '--name-only', 'main'], { cwd: repoDir, encoding: 'utf8' });
+function extractAt(repoDir, ref) {
+  const ls = spawnSync('git', ['ls-tree', '-r', '--name-only', ref], { cwd: repoDir, encoding: 'utf8' });
   if (ls.status !== 0) return null;
   const files = ls.stdout.split('\n');
   if (!files.some((f) => f.startsWith('goals/'))) return null;
-  // saihai 自身（bin/saihai.mjs と tools/check-goals.mjs がある）だけ、main の検査ツールを使う。導入先の tools/ は実行しない
-  const self = files.includes('bin/saihai.mjs') && files.includes('tools/check-goals.mjs');
+  // saihai 自身（package.json の name が saihai、または bin/saihai.mjs がある）だけ、その時点の検査ツールを使う。導入先の tools/ は実行しない
+  const pkg = spawnSync('git', ['show', `${ref}:package.json`], { cwd: repoDir, encoding: 'utf8' });
+  const named = pkg.status === 0 && /"name"\s*:\s*"saihai"/.test(pkg.stdout);
+  const self = files.includes('tools/check-goals.mjs') && (named || files.includes('bin/saihai.mjs'));
   const paths = ['goals', ...(files.some((f) => f.startsWith('decisions/')) ? ['decisions'] : []), ...(self ? ['tools'] : [])];
   const dir = mkdtempSync(join(realpathSync(tmpdir()), 'saihai-main-'));
-  const r = spawnSync('sh', ['-c', 'git archive main "$@" | tar -x -C "$0"', dir, ...paths], { cwd: repoDir });
-  if (r.status === 0) return { dir, checker: self ? join(dir, 'tools', 'check-goals.mjs') : INSTALLED_CHECKER };
+  const r = spawnSync('sh', ['-c', 'ref="$1"; shift; git archive "$ref" "$@" | tar -x -C "$0"', dir, ref, ...paths], { cwd: repoDir });
+  // パイプの終了コードは tar のものなので、取り出せたかは goals/ があるかで確かめる
+  if (r.status === 0 && existsSync(join(dir, 'goals'))) return { dir, checker: self ? join(dir, 'tools', 'check-goals.mjs') : INSTALLED_CHECKER };
   rmSync(dir, { recursive: true, force: true });
   return null;
 }
 
-// G5 の仮説の観測。作業ツリーではなく、main の検査ツールで main を検査する（G7.1 の D6 の指摘）。
+function checkAt(repoDir, ref) {
+  const at = extractAt(repoDir, ref);
+  if (!at) return null;
+  try {
+    return spawnSync(process.execPath, [at.checker, '--goals-dir', join(at.dir, 'goals')], { stdio: 'ignore' }).status === 0 ? 0 : 1;
+  } finally {
+    rmSync(at.dir, { recursive: true, force: true });
+  }
+}
+
+// 門番を通した各時点の main（「門番を通過」のマージ）と今の main
+function gatedStates(repoDir) {
+  const log = spawnSync('git', ['log', 'main', '--first-parent', '--format=%H%x09%s'], { cwd: repoDir, encoding: 'utf8' });
+  if (log.status !== 0) return [];
+  const rows = log.stdout.trim().split('\n').filter(Boolean).map((l) => l.split('\t'));
+  const head = rows[0]?.[0];
+  return [...new Set([head, ...rows.filter(([, subject]) => subject?.includes('門番を通過')).map(([hash]) => hash)].filter(Boolean))];
+}
+
+// G5 の仮説の観測。門番を通した各時点の main を、その時点の検査ツールで検査する（G7.1 の D6 の指摘）。
 // 作業ツリーの検査ツールで検査すると、書式を変えたときに main が壊れたように見える。main がなければ作業ツリーで代える
 export function collectCheckMetric(repoDir, goals, history) {
-  const main = extractMain(repoDir);
-  const mainDir = main?.dir;
-  try {
-    const failed = main
-      ? spawnSync(process.execPath, [main.checker, '--goals-dir', join(mainDir, 'goals')], { stdio: 'ignore' }).status === 0 ? 0 : 1
-      : checkRepo(goals).length + checkDecisions(loadDecisions(join(repoDir, 'goals')), goals.map((g) => g.frontmatter?.id).filter(Boolean)).length > 0 ? 1 : 0;
-    const source = mainDir ? 'ゴール文書の検査（main）' : 'ゴール文書の検査（いまの作業ツリー。main が見つからない）';
-    return metric('mainの検査の失敗', failed ? '1（違反あり）' : '0（違反なし）', historyCount(history, 'mainの検査の失敗'), source, ['G5.E2'], failed);
-  } finally {
-    if (mainDir) rmSync(mainDir, { recursive: true, force: true });
+  const results = gatedStates(repoDir).map((ref) => checkAt(repoDir, ref)).filter((r) => r !== null);
+  if (results.length) {
+    const failed = results.reduce((a, b) => a + b, 0);
+    return metric('mainの検査の失敗', `${failed}（門番を通した main の ${results.length} 個の状態のうち）`, results.length, 'ゴール文書の検査（main の各時点、その時点の検査ツール）', ['G5.E2'], failed);
   }
+  const failed = checkRepo(goals).length + checkDecisions(loadDecisions(join(repoDir, 'goals')), goals.map((g) => g.frontmatter?.id).filter(Boolean)).length > 0 ? 1 : 0;
+  return metric('mainの検査の失敗', failed ? '1（違反あり）' : '0（違反なし）', historyCount(history, 'mainの検査の失敗'), 'ゴール文書の検査（いまの作業ツリー。main が見つからない）', ['G5.E2'], failed);
 }
 
 // プロジェクトが設定する観測のコマンド（saihai.config.json の probes）。標準出力の1つ目の数値が値、2つ目が件数
