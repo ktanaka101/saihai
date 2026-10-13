@@ -1,6 +1,7 @@
 {
   "name": "saihai",
   "private": true,
+  "license": "MIT",
   "description": "人は采配を振るだけ。ゴール設定・現実からの観測・解釈と次の判断を支え、実装は AI に任せるフレームワーク",
   "bin": {
     "saihai": "bin/saihai.mjs"
