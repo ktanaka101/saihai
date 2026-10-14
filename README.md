@@ -4,7 +4,7 @@ English | [日本語](README.ja.md)
 
 You just wield the baton. (A *saihai* is the baton a Japanese commander used to direct troops.)
 
-saihai is a way to write a "goal prompt": what you hand an AI when you delegate work to it.
+saihai is a way of thinking, and a set of tools, for delegating work to AI. For now, it starts from its core: how to write a "goal prompt", the document you hand an AI when you delegate work to it.
 
 **Fix the purpose briefly; leave the method to the AI.** The human decides only the intent (what for, which way, and how much better), the lines not to cross (constraints), and when the AI should stop and ask (report conditions). The AI sets the concrete targets, the method, and how to check the result.
 
@@ -20,14 +20,15 @@ Experimental (0.2.0).
 
 - The author is trying it on their own projects. There is no track record elsewhere yet
 - **Japanese only for now**: the guide, the template (headings such as `## 意図`), and the skill are in Japanese
-- On 2026-10-14, saihai was narrowed down to how to write a goal prompt. The earlier tools (format checks, delegation briefs, observation, an inbox, a decision log, and more) were removed. They remain in the git history (commit 572d280)
+- On 2026-10-14, saihai was restarted from how to write a goal prompt. The earlier tools (format checks, delegation briefs, observation, an inbox, a decision log, and more) were removed. They remain in the git history ([commit 572d280](https://github.com/ktanaka101/saihai/tree/572d280))
+- Tools will be added back when real use runs into a problem
 - The format may change without notice
 
 ## Usage
 
 ### Copy the template
 
-Copy [template.md](template.md), fill it in, and hand it to the implementing AI. It is plain Markdown, so any coding agent can read it.
+Copy [template.md](template.md), fill it in, and ask the implementing AI to read the file and follow 「実装する AI へ」 (the fixed instructions for the implementing AI). It is plain Markdown, so any coding agent can read it.
 
 | Heading | Meaning |
 |---|---|
