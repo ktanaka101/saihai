@@ -1,10 +1,10 @@
 {
   "name": "saihai",
   "displayName": "saihai（采配）",
-  "version": "0.1.0",
-  "description": "人は采配を振るだけ。ゴール設定・現実からの観測・解釈と次の判断を支え、実装は AI に任せる。一言でゴールの草案を作り、受信箱で判断待ちに答える",
+  "version": "0.2.0",
+  "description": "人は采配を振るだけ。AI に渡すゴールプロンプトを、一言の方向から AI と一緒に書く。目的は短く固め、やり方は任せる",
   "author": { "name": "Kentaro Tanaka" },
   "repository": "https://github.com/ktanaka101/saihai",
   "license": "MIT",
-  "keywords": ["goals", "delegation", "decision-log", "inbox"]
+  "keywords": ["goals", "prompt", "delegation", "mission-command"]
 }
