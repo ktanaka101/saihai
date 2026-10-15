@@ -32,7 +32,7 @@ Copy [template.md](template.md), fill it in, and ask the implementing AI to read
 
 | Heading | Meaning |
 |---|---|
-| 意図 | Intent: 目的 (purpose), 理由 (reason), 望ましい最終状態 (desired end state: which way, and how much better) |
+| 意図 | Intent: 目的 (purpose), 理由 (reason), 望ましい最終状態 (desired end state: which way, how much better, and what must not be lost) |
 | 受け入れ条件 | Acceptance criteria a human checks |
 | 制約 | Constraints: what must and must not be done, each with a reason. If one has to be broken, the AI stops and asks |
 | 指針 | Guidance: how you'd like it done, with a reason. The AI may adapt it within the intent, reporting why |
@@ -40,8 +40,8 @@ Copy [template.md](template.md), fill it in, and ask the implementing AI to read
 | 前提 | Assumptions: what is taken as true without checking. The AI reports when one turns out wrong |
 | 報告条件 | Report conditions: when the AI must stop and ask |
 | 非ゴール | Non-goals: what this goal leaves out |
-| 実装する AI へ | Fixed instructions for the implementing AI: read back the plan first, report decisions, and stop and report instead of taking shortcuts. Keep it as is |
-| AI が立てる部分 | The part the AI fills in before starting: 目標と指標 (targets and measures) and automated (`[自動]`) or metric (`[計測]`) acceptance criteria |
+| 実装する AI へ | Fixed instructions for the implementing AI: read back the plan first, report decisions, report only after the checks finish, and stop and report instead of taking shortcuts. Keep it as is |
+| AI が立てる部分 | The part the AI fills in before starting (in the file, or in its report when it can't edit the file): 目標と指標 (targets and measures) and automated (`[自動]`) or metric (`[計測]`) acceptance criteria |
 
 ### Write it with AI in Claude Code
 
