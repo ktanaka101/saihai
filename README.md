@@ -4,11 +4,15 @@ English | [日本語](README.ja.md)
 
 You just wield the baton. (A *saihai* is the baton a Japanese commander used to direct troops.)
 
-saihai is a way of thinking, and a set of tools, for delegating work to AI. For now, it starts from its core: how to write a "goal prompt", the document you hand an AI when you delegate work to it.
+saihai is a way of thinking, and a set of tools, for people to delegate work to AI and coordinate with it nimbly.
 
-**Fix the purpose briefly; leave the method to the AI.** The human decides only the intent (what for, which way, and how much better), the lines not to cross (constraints), and when the AI should stop and ask (report conditions). The AI sets the concrete targets, the method, and how to check the result.
+- **Delegate**: the human decides only the intent (what for, which way, and how much better), the lines not to cross (constraints), and when the AI should stop and ask (report conditions). The AI sets the concrete targets, the method, and how to check the result
+- **Nimbly**: when the situation changes, the AI keeps going on its own judgment from the intent, without waiting for the human. It stops and asks only when something can't be undone, or when the human's answer would change the outcome
+- **Coordinate**: with the intent shared, information flows vertically and laterally. Vertically (human and AI), the AI reads back its understanding before starting, and at the end reports what it decided and what it didn't check. Laterally (AI and AI), sessions that share something announce when they start and finish a change that makes it unusable, and the human decides only when they collide
 
-- [How to write a goal prompt](guide.md) (in Japanese): the principle, what to write, bad and good examples, and common failures
+For now, it starts from the goal prompt, the document you hand an AI when you delegate work to it, which covers delegation and vertical coordination. Its principle: **fix the purpose briefly; leave the method to the AI.**
+
+- [How to write a goal prompt](guide.md) (in Japanese): the principle, what to write, bad and good examples, common failures, and what to put in your project's rules when several sessions share something
 - [Template](template.md) (in Japanese): copy it and fill it in
 - The goal-draft skill (a Claude Code plugin): from a one-sentence direction, the AI researches, writes a draft, and asks you only what needs deciding
 
@@ -22,6 +26,7 @@ Experimental (0.2.0).
 - **Japanese only for now**: the guide, the template (headings such as `## 意図`), and the skill are in Japanese
 - On 2026-10-14, saihai was restarted from how to write a goal prompt. The earlier tools (format checks, delegation briefs, observation, an inbox, a decision log, and more) were removed. They remain in the git history ([commit 572d280](https://github.com/ktanaka101/saihai/tree/572d280))
 - Tools will be added back when real use runs into a problem
+- For lateral coordination (AI sessions keeping each other informed), the guide has a short paragraph to put in your project's rules. It has only been tried on a local toy, not on a real project yet
 - The format may change without notice
 
 ## Usage
