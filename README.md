@@ -41,7 +41,7 @@ Copy [template.md](template.md), fill it in, and ask the implementing AI to read
 | 報告条件 | Report conditions: when the AI must stop and ask |
 | 非ゴール | Non-goals: what this goal leaves out |
 | 実装する AI へ | Fixed instructions for the implementing AI: read back the plan first, report decisions, report only after the checks finish, and stop and report instead of taking shortcuts. Keep it as is |
-| AI が立てる部分 | The part the AI fills in before starting (in the file, or in its report when it can't edit the file): 目標と指標 (targets and measures) and automated (`[自動]`) or metric (`[計測]`) acceptance criteria |
+| AI が立てる部分 | The part the AI fills in before starting (in the file, or in its report when it can't edit the file): a hypothesis, the met and not-met conditions, and how to check them (automated checks, metrics in use) |
 
 ### Write it with AI in Claude Code
 
