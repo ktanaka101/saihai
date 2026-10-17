@@ -46,7 +46,7 @@ Copy [template.md](template.md), fill it in, and ask the implementing AI to read
 | 前提 | Assumptions: what is taken as true without checking. The AI reports when one turns out wrong |
 | 報告条件 | Report conditions: when the AI must stop and ask |
 | 非ゴール | Non-goals: what this goal leaves out |
-| 実装する AI へ | Fixed instructions for the implementing AI: read back the plan first, check for itself what it can instead of handing it to the human, report decisions, report only after the checks finish with the conclusion and what needs deciding first, and stop and report instead of taking shortcuts. Keep it as is |
+| 実装する AI へ | Fixed instructions for the implementing AI: read back the plan first, check for itself what it can instead of handing it to the human, report decisions, report only after the checks finish with the conclusion and what needs deciding first, show another check that protects the same thing when removing or relaxing a check, and stop and report instead of taking shortcuts. Keep it as is |
 | AI が立てる部分 | The part the AI fills in before starting (in the file, or in its report when it can't edit the file): a hypothesis, the met and not-met conditions, and how to check them (automated checks, metrics in use), including at least one check by something other than the implementing AI that is shown to catch failures |
 
 ### Write it with AI in Claude Code
