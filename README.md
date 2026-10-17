@@ -23,6 +23,7 @@ The idea is grounded in mission command (Auftragstaktik). An AI can't build up a
 Experimental (0.2.0).
 
 - The author is trying it on their own projects. There is no track record elsewhere yet
+- If your project already has an issue template or task rules (purpose, exclusions, acceptance criteria, and so on), that is often enough. In that case, use this as a lens for finding what was missing when delegated work goes wrong
 - **Japanese only for now**: the guide, the template (headings such as `## 意図`), and the skill are in Japanese
 - On 2026-10-14, saihai was restarted from how to write a goal prompt. The earlier tools (format checks, delegation briefs, observation, an inbox, a decision log, and more) were removed. They remain in the git history ([commit 572d280](https://github.com/ktanaka101/saihai/tree/572d280))
 - Tools will be added back when real use runs into a problem
